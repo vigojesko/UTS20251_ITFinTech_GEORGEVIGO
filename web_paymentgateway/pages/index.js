@@ -7,10 +7,9 @@ export default function SelectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch("/api/products")
-      .then((res) => res.json())
-      .then((data) => setProducts(data.data));
-  }, []);
+    // Redirect otomatis ke /select
+    router.replace('/select');
+  }, [router]);
 
   const addToCart = (item) => {
     const existing = cart.find((c) => c._id === item._id);

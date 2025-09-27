@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ["localhost"], // biar bisa load image dari public/
+    domains: ["localhost", "monodramatic-indefinably-skyla.ngrok-free.dev"],
   },
 };
 

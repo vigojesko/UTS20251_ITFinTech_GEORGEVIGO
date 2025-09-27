@@ -1,9 +1,12 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URL = process.env.MONGODB_URL;
 
-if (!MONGODB_URI) {
-  throw new Error('Please define the MONGODB_URI in .env.local');
+console.log("🔍 MONGODB_URL dari env:", MONGODB_URL);
+console.log("🔍 NODE_ENV:", process.env.NODE_ENV);
+
+if (!MONGODB_URL) {
+  throw new Error("Please define MONGODB_URL in .env.local");
 }
 
 let cached = global.mongoose;
@@ -16,11 +19,15 @@ async function dbConnect() {
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
+    console.log("🔗 Attempting to connect to:", MONGODB_URL);
+    cached.promise = mongoose.connect(MONGODB_URL, {
+      dbName: "uts_payment",
       bufferCommands: false,
     }).then((mongoose) => mongoose);
   }
+
   cached.conn = await cached.promise;
+  console.log("✅ MongoDB connected successfully");
   return cached.conn;
 }
 
