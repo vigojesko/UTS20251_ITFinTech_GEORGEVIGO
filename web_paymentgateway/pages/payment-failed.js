@@ -1,9 +1,11 @@
 export default function PaymentFailed() {
   return (
-    <div className="flex items-center justify-center h-screen bg-red-100">
-      <h1 className="text-2xl font-bold text-red-700">
-        ❌ Payment Failed. Please try again.
-      </h1>
+    <div style={{ textAlign: "center", padding: "50px" }}>
+      <h1>❌ Payment Failed</h1>
+      <p>Mohon maaf, pembayaran Anda gagal diproses.</p>
+      <a href="/select" style={{ color: "blue", textDecoration: "underline" }}>
+        Kembali ke menu
+      </a>
     </div>
   );
 }

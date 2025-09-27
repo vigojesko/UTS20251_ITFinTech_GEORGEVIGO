@@ -11,7 +11,7 @@ export default async function handler(req, res) {
       const { cart, total } = req.body;
       const external_id = "order-" + Date.now();
 
-      // Buat invoice di Xendit
+      // Buat invoice di Xendit dengan redirect URL
       const response = await axios.post(
         "https://api.xendit.co/v2/invoices",
         {
@@ -19,6 +19,11 @@ export default async function handler(req, res) {
           amount: total,
           payer_email: "customer@example.com",
           description: "Pembayaran order di web_paymentgateway",
+          // redirect URL setelah bayar
+          success_redirect_url:
+            process.env.NEXT_PUBLIC_BASE_URL + "/payment-success",
+          failure_redirect_url:
+            process.env.NEXT_PUBLIC_BASE_URL + "/payment-failed",
         },
         {
           auth: {
