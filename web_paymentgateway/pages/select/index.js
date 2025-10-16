@@ -80,7 +80,7 @@ export default function SelectPage() {
   return (
     <div style={{ 
       minHeight: '100vh', 
-      backgroundColor: '#f8fafc',
+      backgroundColor: '#ffffffff',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>
       {/* Header */}
