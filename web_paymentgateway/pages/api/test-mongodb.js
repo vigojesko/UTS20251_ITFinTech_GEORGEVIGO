@@ -1,4 +1,4 @@
-import dbConnect from "@/lib/mongodb";
+import dbConnect from "@/Lib/mongodb";
 import Payment from "../../models/Payment";
 import Checkout from "../../models/Checkout";
 

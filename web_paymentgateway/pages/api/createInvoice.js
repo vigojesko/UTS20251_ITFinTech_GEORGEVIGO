@@ -1,5 +1,5 @@
 import axios from "axios";
-import dbConnect from "@/lib/mongodb";
+import dbConnect from "@/Lib/mongodb";
 import Checkout from "@/models/Checkout";
 import Payment from "@/models/Payment";
 
