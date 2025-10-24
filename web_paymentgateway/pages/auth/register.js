@@ -1,5 +1,4 @@
-// /pages/api/auth/register.js
-import dbConnect from "../../../lib/mongoose";
+import dbConnect from "../../../lib/mongodb";
 import User from "../../../models/user";
 import bcrypt from "bcryptjs";
 
@@ -11,27 +10,58 @@ export default async function handler(req, res) {
   try {
     await dbConnect();
 
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
+    // Validasi input
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: "All fields are required" });
+      return res.status(400).json({
+        success: false,
+        message: "Nama, email, dan password wajib diisi",
+      });
     }
 
-    const existingUser = await User.findOne({ email });
+    // Cek apakah email sudah terdaftar
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: "Email already registered" });
+      return res.status(400).json({
+        success: false,
+        message: "Email sudah terdaftar",
+      });
     }
 
+    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Buat user baru
     const newUser = await User.create({
       name,
-      email,
+      email: email.toLowerCase(),
       password: hashedPassword,
+      phone: phone || "",
+      role: "user", // default role
+      createdAt: new Date(),
     });
 
-    res.status(201).json({ success: true, message: "User registered successfully", user: newUser });
+    // Hapus password dari response
+    const userResponse = {
+      _id: newUser._id,
+      name: newUser.name,
+      email: newUser.email,
+      phone: newUser.phone,
+      role: newUser.role,
+    };
+
+    res.status(201).json({
+      success: true,
+      message: "Registrasi berhasil!",
+      user: userResponse,
+    });
   } catch (error) {
-    console.error("❌ Register error:", error);
-    res.status(500).json({ success: false, message: "Server error" });
+    console.error("Register error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Terjadi kesalahan saat registrasi",
+      error: error.message,
+    });
   }
 }

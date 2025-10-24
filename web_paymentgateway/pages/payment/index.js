@@ -6,21 +6,55 @@ export default function PaymentPage() {
   const [amount, setAmount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [selectedMethod, setSelectedMethod] = useState('card');
+  const [isClient, setIsClient] = useState(false);
   const router = useRouter();
 
-  // Ambil cart dari localStorage
+  // User data from localStorage
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPhoto, setUserPhoto] = useState("");
+  const [userRole, setUserRole] = useState("");
+
+  // Ambil cart dan user data dari localStorage
   useEffect(() => {
+    setIsClient(true);
+
+    // Check if user is logged in
+    const token = localStorage.getItem("token");
+    if (!token) {
+      alert("⚠️ Anda harus login terlebih dahulu!");
+      router.push("/select");
+      return;
+    }
+
+    // Load cart dari localStorage
     const savedCart = JSON.parse(localStorage.getItem("cart") || "[]");
     setItems(savedCart);
     const sum = savedCart.reduce((acc, c) => acc + c.price * c.qty, 0);
     setAmount(sum);
-  }, []);
+
+    // Load user data dari localStorage
+    const name = localStorage.getItem("userName");
+    const email = localStorage.getItem("userEmail");
+    const photo = localStorage.getItem("userPhoto");
+    const role = localStorage.getItem("userRole");
+    
+    setUserName(name || "VIGWAGON User");
+    setUserEmail(email || "user@mail.com");
+    setUserPhoto(photo || "");
+    setUserRole(role || "user");
+  }, [router]);
+
+  if (!isClient) return null; // Prevent SSR issues
 
   const formatPrice = (price) => {
+    if (typeof window === "undefined") return "Rp 0,00";
+    const safePrice = isNaN(price) ? 0 : Number(price);
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
-      currency: 'IDR'
-    }).format(price);
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(safePrice);
   };
 
   const getTotalItems = () => {
@@ -115,8 +149,8 @@ export default function PaymentPage() {
             </div>
           </div>
           
+          {/* User Profile Section */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {/* Profile Picture - menggunakan pfp.jpg */}
             <div style={{
               width: '40px',
               height: '40px',
@@ -125,31 +159,28 @@ export default function PaymentPage() {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '2px solid #f97316'
+              border: `2px solid ${userRole === "admin" ? "#ef4444" : "#f97316"}`,
+              backgroundColor: userRole === "admin" ? "#ef4444" : "#f97316"
             }}>
-              <img 
-                src="/pfp.jpg"
-                alt="Profile Picture"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  objectPosition: 'center'
-                }}
-                onError={(e) => {
-                  // Fallback jika gambar tidak ditemukan
-                  e.target.style.display = 'none';
-                  e.target.parentElement.style.backgroundColor = '#f97316';
-                  e.target.parentElement.style.color = 'white';
-                  e.target.parentElement.style.fontWeight = 'bold';
-                  e.target.parentElement.style.fontSize = '14px';
-                  e.target.parentElement.innerHTML = getTotalItems() || 'JD';
-                }}
-              />
+              {userPhoto ? (
+                <img 
+                  src={userPhoto}
+                  alt="Profile"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover'
+                  }}
+                />
+              ) : (
+                <span style={{ color: 'white', fontSize: '20px' }}>
+                  {userRole === "admin" ? "👨‍💼" : "👤"}
+                </span>
+              )}
             </div>
             <div>
-              <div style={{ fontWeight: 'bold', fontSize: '14px' }}>VIGWAGON</div>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>PTVIGWAGON@GMAIL.COM</div>
+              <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{userName}</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>{userEmail.toUpperCase()}</div>
             </div>
           </div>
         </div>
@@ -574,20 +605,6 @@ export default function PaymentPage() {
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Adobe Stock Badge */}
-      <div style={{
-        position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        backgroundColor: '#1f2937',
-        color: 'white',
-        padding: '8px 16px',
-        borderRadius: '8px',
-        fontSize: '12px'
-      }}>
-        Adobe Stock | #398084924
       </div>
 
       {/* Loading Animation CSS */}

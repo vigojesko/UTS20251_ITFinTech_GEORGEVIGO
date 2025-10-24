@@ -1,4 +1,33 @@
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
+
 export default function PaymentSuccess() {
+  const router = useRouter();
+  const [isClient, setIsClient] = useState(false);
+  
+  // User data from localStorage
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userPhoto, setUserPhoto] = useState("");
+  const [userRole, setUserRole] = useState("");
+
+  useEffect(() => {
+    setIsClient(true);
+
+    // Load user data from localStorage
+    const name = localStorage.getItem("userName");
+    const email = localStorage.getItem("userEmail");
+    const photo = localStorage.getItem("userPhoto");
+    const role = localStorage.getItem("userRole");
+    
+    setUserName(name || "VIGWAGON User");
+    setUserEmail(email || "user@mail.com");
+    setUserPhoto(photo || "");
+    setUserRole(role || "user");
+  }, []);
+
+  if (!isClient) return null;
+
   return (
     <div style={{ 
       minHeight: '100vh', 
@@ -19,72 +48,55 @@ export default function PaymentSuccess() {
           alignItems: 'center',
           justifyContent: 'space-between'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
               width: '40px',
               height: '40px',
-              backgroundColor: '#e2e8f0',
+              backgroundColor: '#f97316',
               borderRadius: '50%',
-              marginRight: '12px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
-            }}>🔍</div>
-            <input 
-              type="text" 
-              placeholder="Search products..." 
-              style={{
-                width: '300px',
-                padding: '12px 16px',
-                backgroundColor: '#f1f5f9',
-                border: 'none',
-                borderRadius: '25px',
-                outline: 'none',
-                fontSize: '14px'
-              }}
-            />
+              justifyContent: 'center',
+              fontSize: '20px',
+              color: 'white'
+            }}>🛒</div>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '18px' }}>Wagon Kopitiam</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>PT WAGON NUSANTARA GROUP</div>
+            </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div style={{
-              width: '32px',
-              height: '32px',
-              backgroundColor: '#e2e8f0',
-              borderRadius: '4px'
-            }}></div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '50%',
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '2px solid #14b8a6'
-              }}>
+              width: '40px',
+              height: '40px',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: `2px solid ${userRole === "admin" ? "#ef4444" : "#f97316"}`,
+              backgroundColor: userRole === "admin" ? "#ef4444" : "#f97316"
+            }}>
+              {userPhoto ? (
                 <img 
-                  src="/pfp.jpg"
-                  alt="Profile Picture"
+                  src={userPhoto}
+                  alt="Profile"
                   style={{
                     width: '100%',
                     height: '100%',
-                    objectFit: 'cover',
-                    objectPosition: 'center'
-                  }}
-                  onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.parentElement.style.backgroundColor = '#14b8a6';
-                    e.target.parentElement.style.color = 'white';
-                    e.target.parentElement.style.fontWeight = 'bold';
-                    e.target.parentElement.style.fontSize = '14px';
-                    e.target.parentElement.innerHTML = 'JD';
+                    objectFit: 'cover'
                   }}
                 />
-              </div>
-              <div>
-                <div style={{ fontWeight: 'bold', fontSize: '14px' }}>VIGWAGON</div>
-                <div style={{ fontSize: '12px', color: '#64748b' }}>PT WAGON NUSANTARA GROUP</div>
-              </div>
+              ) : (
+                <span style={{ color: 'white', fontSize: '20px' }}>
+                  {userRole === "admin" ? "👨‍💼" : "👤"}
+                </span>
+              )}
+            </div>
+            <div>
+              <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{userName}</div>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>{userEmail.toUpperCase()}</div>
             </div>
           </div>
         </div>
@@ -115,7 +127,6 @@ export default function PaymentSuccess() {
             fontSize: '48px',
             fontWeight: 'bold',
             color: '#1f2937',
-            marginBottom: '16px',
             margin: '0 0 16px 0'
           }}>
             Payment Success!
@@ -124,7 +135,6 @@ export default function PaymentSuccess() {
           <p style={{
             fontSize: '20px',
             color: '#64748b',
-            marginBottom: '32px',
             margin: '0 0 32px 0'
           }}>
             Terima kasih! Pembayaran Anda telah berhasil diproses.
@@ -167,7 +177,6 @@ export default function PaymentSuccess() {
               <h3 style={{
                 fontSize: '24px',
                 fontWeight: 'bold',
-                marginBottom: '8px',
                 margin: '0 0 8px 0'
               }}>
                 Pesanan Berhasil
@@ -231,7 +240,6 @@ export default function PaymentSuccess() {
             fontSize: '18px',
             fontWeight: 'bold',
             color: '#1f2937',
-            marginBottom: '16px',
             margin: '0 0 16px 0'
           }}>
             Informasi Pesanan:
@@ -254,7 +262,8 @@ export default function PaymentSuccess() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'white'
+                color: 'white',
+                fontSize: '16px'
               }}>
                 💳
               </div>
@@ -280,7 +289,8 @@ export default function PaymentSuccess() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'white'
+                color: 'white',
+                fontSize: '16px'
               }}>
                 📍
               </div>
@@ -306,7 +316,8 @@ export default function PaymentSuccess() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: 'white'
+                color: 'white',
+                fontSize: '16px'
               }}>
                 ⏱️
               </div>
@@ -325,8 +336,8 @@ export default function PaymentSuccess() {
           justifyContent: 'center',
           flexWrap: 'wrap'
         }}>
-          <a 
-            href="/select" 
+          <button 
+            onClick={() => router.push("/")}
             style={{
               backgroundColor: '#f97316',
               color: 'white',
@@ -334,16 +345,25 @@ export default function PaymentSuccess() {
               borderRadius: '12px',
               fontSize: '18px',
               fontWeight: 'bold',
-              textDecoration: 'none',
+              border: 'none',
               display: 'inline-flex',
               alignItems: 'center',
               gap: '8px',
               transition: 'all 0.2s',
-              boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)'
+              boxShadow: '0 4px 12px rgba(249, 115, 22, 0.3)',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#ea580c';
+              e.target.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#f97316';
+              e.target.style.transform = 'translateY(0)';
             }}
           >
             🍽️ Kembali ke Menu
-          </a>
+          </button>
         </div>
       </div>
 
@@ -355,26 +375,12 @@ export default function PaymentSuccess() {
         fontSize: '16px'
       }}>
         <p style={{ margin: '0 0 8px 0' }}>
-          Email konfirmasi telah dikirim ke alamat email Anda
+          Email konfirmasi telah dikirim ke {userEmail}
         </p>
         <p style={{ margin: '0' }}>
           Butuh bantuan? Hubungi customer service kami di{' '}
           <span style={{ color: '#14b8a6', fontWeight: '600' }}>0800-123-456</span>
         </p>
-      </div>
-
-      {/* Adobe Stock Badge */}
-      <div style={{
-        position: 'fixed',
-        bottom: '24px',
-        left: '24px',
-        backgroundColor: '#1f2937',
-        color: 'white',
-        padding: '8px 16px',
-        borderRadius: '8px',
-        fontSize: '12px'
-      }}>
-        Adobe Stock | #398084924
       </div>
     </div>
   );
