@@ -5,10 +5,10 @@ const CheckoutSchema = new mongoose.Schema({
   external_id: { type: String, required: true },
   status: { 
     type: String, 
-    enum: ["CREATED", "PENDING", "PENDING_PAYMENT", "PAID"], 
+    enum: ["CREATED", "PENDING", "PENDING_PAYMENT", "PAID", "EXPIRED", "CANCELLED"], 
     default: "PENDING" 
   },
-  amount: { type: Number, required: true, default: 0 },  // total transaksi
+  amount: { type: Number, required: true, default: 0 }, // ✅ INI PENTING
   items: [
     {
       _id: String,
@@ -21,10 +21,12 @@ const CheckoutSchema = new mongoose.Schema({
   expires_at: Date,
   paid_at: Date,
   customer_info: {
-    email: { type: String, default: "customer@example.com" }
-  }
+    email: { type: String, default: "customer@example.com" },
+    name: { type: String, default: "Customer" }
+  },
+  userEmail: { type: String, index: true },
 }, {
-  timestamps: true // createdAt, updatedAt otomatis
+  timestamps: true
 });
 
 export default mongoose.models.Checkout || mongoose.model("Checkout", CheckoutSchema);

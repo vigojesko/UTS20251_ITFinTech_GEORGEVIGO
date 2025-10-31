@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { sendOrderNotification } from "../../lib/fonnte";
 
 export default function SelectPage() {
   const [products, setProducts] = useState([]);
@@ -27,6 +28,15 @@ export default function SelectPage() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
 
+  // WhatsApp OTP states
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [canResendOTP, setCanResendOTP] = useState(true);
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [useWhatsAppAuth, setUseWhatsAppAuth] = useState(false);
+
   // ======= LOAD USER DATA =======
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -45,6 +55,23 @@ export default function SelectPage() {
       }
     }
   }, []);
+
+  // ======= OTP TIMER =======
+  useEffect(() => {
+    let interval;
+    if (otpTimer > 0) {
+      interval = setInterval(() => {
+        setOtpTimer((prev) => {
+          if (prev <= 1) {
+            setCanResendOTP(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [otpTimer]);
 
   // ======= LOAD PRODUCTS =======
   useEffect(() => {
@@ -89,6 +116,139 @@ export default function SelectPage() {
 
   const getTotalPrice = () => cart.reduce((total, item) => total + item.price * item.qty, 0);
   const getTotalItems = () => cart.reduce((t, i) => t + i.qty, 0);
+
+  // ======= WHATSAPP OTP FUNCTIONS =======
+  const handleRequestOTP = async () => {
+    setAuthError("");
+    setAuthSuccess("");
+    
+    if (!phoneNumber) {
+      setAuthError("Nomor WhatsApp harus diisi!");
+      return;
+    }
+
+    const phoneRegex = /^(08|62)[0-9]{9,12}$/;
+    if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
+      setAuthError("Format nomor tidak valid! Gunakan 08xxx atau 628xxx");
+      return;
+    }
+
+    if (authMode === "register" && !fullName) {
+      setAuthError("Nama lengkap harus diisi!");
+      return;
+    }
+
+    setAuthLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || "Gagal mengirim OTP");
+      }
+
+      setOtpSent(true);
+      setOtpTimer(1800); // 30 menit (biar ga expired cepat)
+      setCanResendOTP(false);
+      setAuthSuccess(`✅ Kode OTP berhasil dikirim ke WhatsApp ${data.phoneNumber}`);
+      
+      if (data.debug?.otp) {
+        console.log("🔐 [DEV] OTP Anda:", data.debug.otp);
+        // OTP bisa dilihat di console (F12)
+      }
+
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async () => {
+    setAuthError("");
+    setAuthSuccess("");
+    
+    if (!otp) {
+      setAuthError("Kode OTP harus diisi!");
+      return;
+    }
+
+    if (otp.length !== 6) {
+      setAuthError("Kode OTP harus 6 digit!");
+      return;
+    }
+
+    setAuthLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          phoneNumber,
+          otp,
+          fullName,
+          action: authMode
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || "Verifikasi OTP gagal");
+      }
+
+      const { user, token } = data;
+      
+      localStorage.setItem("token", token);
+      localStorage.setItem("userRole", user.role);
+      localStorage.setItem("userName", user.fullName);
+      localStorage.setItem("userEmail", user.phoneNumber);
+      localStorage.setItem("userPhoto", user.photo || "");
+      localStorage.setItem("currentUserId", user.id);
+
+      setIsLoggedIn(true);
+      setUserRole(user.role);
+      setUserName(user.fullName);
+      setUserEmail(user.phoneNumber);
+      setUserPhoto(user.photo || "");
+      
+      setShowAuth(false);
+      setPhoneNumber("");
+      setOtp("");
+      setFullName("");
+      setOtpSent(false);
+      
+      const message = authMode === "register" 
+        ? `🎉 Registrasi berhasil! Selamat datang ${user.fullName}` 
+        : `👋 Selamat datang kembali, ${user.fullName}!`;
+      
+      alert(message);
+
+      if (user.role === "admin") {
+        setTimeout(() => {
+          window.location.href = "/admin/dashboard";
+        }, 500);
+      }
+
+    } catch (error) {
+      setAuthError(error.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (!canResendOTP || otpTimer > 0) return;
+    setOtp("");
+    await handleRequestOTP();
+  };
 
 
 // ======= REGISTER FUNCTION (DIPERBAIKI) =======
@@ -686,42 +846,176 @@ const handleLogout = () => {
               </div>
             </div>
 
-            {authMode === "login" && (
-              <div style={{ backgroundColor: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12 }}>
-                <div style={{ fontWeight: 600, color: "#0369a1", marginBottom: 4 }}>🔑 Demo Credentials:</div>
-                <div style={{ color: "#075985" }}>
-                  <strong>User:</strong> user@mail.com / user123<br />
-                  <strong>Admin:</strong> admin@mail.com / admin123
-                </div>
+            {/* Toggle WhatsApp / Email Auth */}
+            <div style={{ marginBottom: 16, display: "flex", gap: 8, backgroundColor: "#f8fafc", padding: 6, borderRadius: 10 }}>
+              <button
+                onClick={() => { setUseWhatsAppAuth(false); setAuthError(""); setAuthSuccess(""); }}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: !useWhatsAppAuth ? "#f97316" : "transparent",
+                  color: !useWhatsAppAuth ? "white" : "#64748b",
+                  border: "none",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: 13
+                }}
+              >
+                📧 Email
+              </button>
+              <button
+                onClick={() => { setUseWhatsAppAuth(true); setAuthError(""); setAuthSuccess(""); setOtpSent(false); }}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: useWhatsAppAuth ? "#f97316" : "transparent",
+                  color: useWhatsAppAuth ? "white" : "#64748b",
+                  border: "none",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  fontSize: 13
+                }}
+              >
+                📱 WhatsApp
+              </button>
+            </div>
+
+            {useWhatsAppAuth && (
+              <div style={{ backgroundColor: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12 }}>
+                💡 <strong>Login/Daftar menggunakan WhatsApp OTP</strong><br/>
+                Anda akan menerima kode verifikasi melalui WhatsApp
               </div>
             )}
 
-            {authMode === "register" && (
-              <input type="text" placeholder="Nama Lengkap" value={fullName} onChange={(e) => setFullName(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+            {/* WhatsApp OTP Flow */}
+            {useWhatsAppAuth ? (
+              <>
+                {!otpSent ? (
+                  <>
+                    {authMode === "register" && (
+                      <input type="text" placeholder="Nama Lengkap" value={fullName} onChange={(e) => setFullName(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+                    )}
+
+                    <input 
+                      type="tel" 
+                      placeholder="08xxxxxxxxxx atau 628xxxxxxxxxx" 
+                      value={phoneNumber} 
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} 
+                    />
+
+                    {authSuccess && (
+                      <div style={{ backgroundColor: "#f0fdf4", color: "#15803d", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>
+                        {authSuccess}
+                      </div>
+                    )}
+                    {authError && (
+                      <div style={{ backgroundColor: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>❌ {authError}</div>
+                    )}
+
+                    <button 
+                      onClick={handleRequestOTP}
+                      disabled={authLoading}
+                      style={{ width: "100%", padding: "12px", backgroundColor: authLoading ? "#fb923c" : "#f97316", color: "white", border: "none", borderRadius: 10, cursor: authLoading ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15 }}
+                    >
+                      {authLoading ? "⏳ Mengirim..." : "📨 Kirim Kode OTP"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <input 
+                      type="text" 
+                      placeholder="Masukkan kode OTP (6 digit)" 
+                      value={otp} 
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      maxLength={6}
+                      style={{ width: "100%", padding: "16px", borderRadius: 10, border: "2px solid #e5e7eb", fontSize: 24, letterSpacing: "8px", textAlign: "center", fontWeight: 700, boxSizing: "border-box", marginBottom: 12 }} 
+                    />
+                    <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12, textAlign: "center" }}>
+                      OTP dikirim ke WhatsApp: <strong>{phoneNumber}</strong>
+                    </div>
+
+                    <div style={{ marginBottom: 12, textAlign: "center" }}>
+                      {otpTimer > 0 ? (
+                        <div style={{ fontSize: 14, color: "#64748b" }}>
+                          ⏱️ Berlaku: <strong>{Math.floor(otpTimer / 60)}:{(otpTimer % 60).toString().padStart(2, '0')}</strong>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={handleResendOTP}
+                          disabled={!canResendOTP}
+                          style={{ padding: "8px 16px", backgroundColor: "transparent", color: canResendOTP ? "#f97316" : "#94a3b8", border: "none", cursor: canResendOTP ? "pointer" : "not-allowed", fontWeight: 600, fontSize: 14, textDecoration: "underline" }}
+                        >
+                          🔄 Kirim Ulang OTP
+                        </button>
+                      )}
+                    </div>
+
+                    {authError && (
+                      <div style={{ backgroundColor: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>❌ {authError}</div>
+                    )}
+
+                    <button 
+                      onClick={handleVerifyOTP}
+                      disabled={authLoading || otp.length !== 6}
+                      style={{ width: "100%", padding: "12px", backgroundColor: (authLoading || otp.length !== 6) ? "#94a3b8" : "#10b981", color: "white", border: "none", borderRadius: 10, cursor: (authLoading || otp.length !== 6) ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15, marginBottom: 10 }}
+                    >
+                      {authLoading ? "⏳ Verifikasi..." : "✅ Verifikasi & " + (authMode === "register" ? "Daftar" : "Login")}
+                    </button>
+
+                    <button 
+                      onClick={() => { setOtpSent(false); setOtp(""); setAuthError(""); setAuthSuccess(""); }}
+                      disabled={authLoading}
+                      style={{ width: "100%", padding: "10px", backgroundColor: "#f1f5f9", color: "#64748b", border: "none", borderRadius: 10, cursor: authLoading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: 14 }}
+                    >
+                      ← Ganti Nomor
+                    </button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Email/Password Form - ORIGINAL */}
+                {authMode === "login" && (
+                  <div style={{ backgroundColor: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12 }}>
+                    <div style={{ fontWeight: 600, color: "#0369a1", marginBottom: 4 }}>🔑 Demo Credentials:</div>
+                    <div style={{ color: "#075985" }}>
+                      <strong>User:</strong> user@mail.com / user123<br />
+                      <strong>Admin:</strong> admin@mail.com / admin123
+                    </div>
+                  </div>
+                )}
+
+                {authMode === "register" && (
+                  <input type="text" placeholder="Nama Lengkap" value={fullName} onChange={(e) => setFullName(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+                )}
+
+                <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+                <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: authMode === "register" ? 12 : 8, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+
+                {authMode === "register" && (
+                  <input type="password" placeholder="Konfirmasi Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 8, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
+                )}
+
+                {authError && (
+                  <div style={{ backgroundColor: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>❌ {authError}</div>
+                )}
+
+                <button onClick={authMode === "login" ? handleLogin : handleRegister} disabled={authLoading} style={{ width: "100%", padding: "12px", backgroundColor: authLoading ? "#fb923c" : "#f97316", color: "white", border: "none", borderRadius: 10, cursor: authLoading ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15 }}>
+                  {authLoading ? "Memproses..." : (authMode === "login" ? "Login" : "Daftar")}
+                </button>
+              </>
             )}
-
-            <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 12, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
-            <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: authMode === "register" ? 12 : 8, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
-
-            {authMode === "register" && (
-              <input type="password" placeholder="Konfirmasi Password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} style={{ width: "100%", padding: "12px", borderRadius: 10, border: "2px solid #e5e7eb", marginBottom: 8, outline: "none", fontSize: 14, boxSizing: "border-box" }} />
-            )}
-
-            {authError && (
-              <div style={{ backgroundColor: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12, fontWeight: 500 }}>❌ {authError}</div>
-            )}
-
-            <button onClick={authMode === "login" ? handleLogin : handleRegister} disabled={authLoading} style={{ width: "100%", padding: "12px", backgroundColor: authLoading ? "#fb923c" : "#f97316", color: "white", border: "none", borderRadius: 10, cursor: authLoading ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15 }}>
-              {authLoading ? "Memproses..." : (authMode === "login" ? "Login" : "Daftar")}
-            </button>
 
             <button onClick={() => setShowAuth(false)} disabled={authLoading} style={{ width: "100%", padding: "10px", backgroundColor: "#f1f5f9", color: "#475569", border: "none", borderRadius: 10, cursor: authLoading ? "not-allowed" : "pointer", marginTop: 10, fontWeight: 600, fontSize: 14 }}>Batal</button>
 
             <div style={{ marginTop: 16, fontSize: 13, color: "#64748b", textAlign: "center" }}>
               {authMode === "login" ? (
-                <>Belum punya akun? <strong style={{ color: "#f97316", cursor: "pointer" }} onClick={() => { setAuthMode("register"); setAuthError(""); }}>Daftar sekarang</strong></>
+                <>Belum punya akun? <strong style={{ color: "#f97316", cursor: "pointer" }} onClick={() => { setAuthMode("register"); setAuthError(""); setAuthSuccess(""); setOtpSent(false); }}>Daftar sekarang</strong></>
               ) : (
-                <>Sudah punya akun? <strong style={{ color: "#f97316", cursor: "pointer" }} onClick={() => { setAuthMode("login"); setAuthError(""); }}>Login</strong></>
+                <>Sudah punya akun? <strong style={{ color: "#f97316", cursor: "pointer" }} onClick={() => { setAuthMode("login"); setAuthError(""); setAuthSuccess(""); setOtpSent(false); }}>Login</strong></>
               )}
             </div>
           </div>

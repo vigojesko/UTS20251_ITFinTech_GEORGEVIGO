@@ -1,402 +1,553 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/router";
 
 export default function Dashboard() {
+  // State Management
   const [checkouts, setCheckouts] = useState([]);
   const [products, setProducts] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [userName] = useState("Admin");
+  const [darkMode, setDarkMode] = useState(false);
   const router = useRouter();
 
-  // Modal states
+  // Product Management States
   const [showAddProduct, setShowAddProduct] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "" });
+  const [newProduct, setNewProduct] = useState({ name: "", price: "", stock: "", category: "" });
+  const [searchProduct, setSearchProduct] = useState("");
+  const [filterCategory, setFilterCategory] = useState("all");
 
-  useEffect(() => {
-    // Mock data untuk testing
-    const mockCheckouts = [
-      {
-        _id: "1",
-        userEmail: "customer1@mail.com",
-        items: [
-          { name: "Teh Botol", quantity: 2, price: 5000 },
-          { name: "Keripik", quantity: 1, price: 10000 }
-        ],
-        total: 20000,
-        status: "PAID",
-        createdAt: new Date().toISOString()
-      },
-      {
-        _id: "2",
-        userEmail: "customer2@mail.com",
-        items: [{ name: "Nasi Goreng", quantity: 1, price: 25000 }],
-        total: 25000,
-        status: "PENDING_PAYMENT",
-        createdAt: new Date(Date.now() - 86400000).toISOString()
-      },
-      {
-        _id: "3",
-        userEmail: "customer3@mail.com",
-        items: [
-          { name: "Bakmie", quantity: 2, price: 20000 },
-          { name: "Es Jeruk", quantity: 2, price: 7000 }
-        ],
-        total: 54000,
-        status: "PAID",
-        createdAt: new Date(Date.now() - 172800000).toISOString()
-      },
-      {
-        _id: "4",
-        userEmail: "customer4@mail.com",
-        items: [{ name: "Siomay", quantity: 3, price: 15000 }],
-        total: 45000,
-        status: "PAID",
-        createdAt: new Date(Date.now() - 259200000).toISOString()
-      },
-      {
-        _id: "5",
-        userEmail: "customer5@mail.com",
-        items: [{ name: "Gado-Gado", quantity: 1, price: 18000 }],
-        total: 18000,
-        status: "PENDING_PAYMENT",
-        createdAt: new Date(Date.now() - 345600000).toISOString()
-      }
-    ];
+  // Date Range States
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-    const mockProducts = [
-      { _id: "1", name: "Teh Botol", price: 5000, stock: 100 },
-      { _id: "2", name: "Nasi Goreng", price: 25000, stock: 50 },
-      { _id: "3", name: "Keripik", price: 10000, stock: 75 },
-      { _id: "4", name: "Bakmie", price: 20000, stock: 60 },
-      { _id: "5", name: "Siomay", price: 15000, stock: 40 },
-      { _id: "6", name: "Es Kelapa", price: 8000, stock: 80 },
-      { _id: "7", name: "Es Jeruk", price: 7000, stock: 90 },
-      { _id: "8", name: "Gado-Gado", price: 18000, stock: 45 }
-    ];
+  // Comparison Data
+  const [previousPeriodData, setPreviousPeriodData] = useState(null);
+  const [comparison, setComparison] = useState(null);
 
-    const paidCheckouts = mockCheckouts.filter(c => c.status === "PAID");
-    const mockSummary = {
-      totalOrders: mockCheckouts.length,
-      totalOmzet: paidCheckouts.reduce((sum, c) => sum + c.total, 0),
-      totalPending: mockCheckouts.filter(c => c.status === "PENDING_PAYMENT").length,
-      totalPaid: paidCheckouts.length
-    };
+  // Notification State
+  const [notification, setNotification] = useState(null);
 
-    setTimeout(() => {
-      setCheckouts(mockCheckouts);
-      setProducts(mockProducts);
-      setSummary(mockSummary);
-      setLoading(false);
-    }, 800);
-  }, []);
+  // Chart Hover State
+  const [hoveredChart, setHoveredChart] = useState(null);
 
-  const handleLogout = () => {
-    alert("Logout berhasil!");
+  const showNotification = (message, type = "success") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleAddProduct = () => {
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        // Fetch main data
+        const [checkoutRes, productRes, analyticsRes] = await Promise.all([
+          fetch(`/api/checkout?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`),
+          fetch("/api/products"),
+          fetch(`/api/analytics?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`)
+        ]);
+
+        const [checkoutData, productData, analyticsData] = await Promise.all([
+          checkoutRes.json(),
+          productRes.json(),
+          analyticsRes.json()
+        ]);
+
+        // Process checkout data
+        if (checkoutData.success && checkoutData.data) {
+          setCheckouts(checkoutData.data);
+          
+          const paidCheckouts = checkoutData.data.filter(c => c.status === "PAID");
+          const totalOmzet = paidCheckouts.reduce((sum, c) => sum + (c.amount || 0), 0);
+          const cancelledCheckouts = checkoutData.data.filter(c => c.status === "CANCELLED");
+          
+          setSummary({
+            totalOrders: checkoutData.data.length,
+            totalOmzet: totalOmzet,
+            totalPending: checkoutData.data.filter(c => c.status === "PENDING_PAYMENT" || c.status === "PENDING").length,
+            totalPaid: paidCheckouts.length,
+            totalCancelled: cancelledCheckouts.length,
+            avgOrderValue: paidCheckouts.length > 0 ? totalOmzet / paidCheckouts.length : 0
+          });
+        } else {
+          setCheckouts([]);
+          setSummary({ totalOrders: 0, totalOmzet: 0, totalPending: 0, totalPaid: 0, totalCancelled: 0, avgOrderValue: 0 });
+        }
+
+        // Process product data
+        if (productData.success && productData.data) {
+          setProducts(productData.data);
+        } else {
+          setProducts([]);
+        }
+
+        // Process analytics data
+        if (analyticsData.success) {
+          setAnalytics(analyticsData.data);
+        }
+
+        // Fetch previous period for comparison
+        const daysDiff = Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / (1000 * 60 * 60 * 24));
+        const prevStartDate = new Date(new Date(dateRange.startDate) - daysDiff * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        const prevEndDate = new Date(new Date(dateRange.startDate) - 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        const prevCheckoutRes = await fetch(`/api/checkout?startDate=${prevStartDate}&endDate=${prevEndDate}`);
+        const prevCheckoutData = await prevCheckoutRes.json();
+
+        if (prevCheckoutData.success && prevCheckoutData.data) {
+          const prevPaidCheckouts = prevCheckoutData.data.filter(c => c.status === "PAID");
+          const prevTotalOmzet = prevPaidCheckouts.reduce((sum, c) => sum + (c.amount || 0), 0);
+          
+          setPreviousPeriodData({
+            totalOrders: prevCheckoutData.data.length,
+            totalOmzet: prevTotalOmzet,
+            totalPaid: prevPaidCheckouts.length
+          });
+
+          // Calculate comparison
+          const paidCheckouts = checkoutData.data.filter(c => c.status === "PAID");
+          const currentOmzet = paidCheckouts.reduce((sum, c) => sum + (c.amount || 0), 0);
+          const omzetChange = prevTotalOmzet > 0 ? ((currentOmzet - prevTotalOmzet) / prevTotalOmzet) * 100 : 0;
+          const ordersChange = prevCheckoutData.data.length > 0 ? ((checkoutData.data.length - prevCheckoutData.data.length) / prevCheckoutData.data.length) * 100 : 0;
+
+          setComparison({
+            omzetChange: omzetChange.toFixed(1),
+            ordersChange: ordersChange.toFixed(1)
+          });
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.error("❌ Error fetching data:", error);
+        setCheckouts([]);
+        setProducts([]);
+        setSummary({ totalOrders: 0, totalOmzet: 0, totalPending: 0, totalPaid: 0, totalCancelled: 0, avgOrderValue: 0 });
+        setLoading(false);
+        showNotification("Gagal memuat data", "error");
+      }
+    };
+
+    fetchData();
+  }, [dateRange]);
+
+  const handleLogout = () => {
+    showNotification("Logout berhasil!", "success");
+    setTimeout(() => router.push("/login"), 1500);
+  };
+
+  const handleAddProduct = async () => {
     if (!newProduct.name || !newProduct.price) {
-      alert("Nama dan harga produk harus diisi!");
+      showNotification("Nama dan harga produk harus diisi!", "error");
       return;
     }
     
-    const product = {
-      _id: Date.now().toString(),
-      name: newProduct.name,
-      price: Number(newProduct.price),
-      stock: Number(newProduct.stock) || 0
-    };
-    
-    setProducts([...products, product]);
-    setNewProduct({ name: "", price: "", stock: "" });
-    setShowAddProduct(false);
-    alert("Produk berhasil ditambahkan!");
+    try {
+      const response = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newProduct.name,
+          price: Number(newProduct.price),
+          stock: Number(newProduct.stock) || 0,
+          category: newProduct.category || "Other"
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setProducts([...products, data.data]);
+        setNewProduct({ name: "", price: "", stock: "", category: "" });
+        setShowAddProduct(false);
+        showNotification("Produk berhasil ditambahkan!", "success");
+      } else {
+        showNotification("Gagal menambahkan produk: " + data.error, "error");
+      }
+    } catch (error) {
+      console.error("Error adding product:", error);
+      showNotification("Terjadi kesalahan saat menambah produk!", "error");
+    }
   };
 
-  const handleDeleteProduct = (id) => {
+  const handleDeleteProduct = async (id) => {
     if (window.confirm("Yakin ingin menghapus produk ini?")) {
-      setProducts(products.filter(p => p._id !== id));
-      alert("Produk berhasil dihapus!");
+      try {
+        const response = await fetch(`/api/products/${id}`, {
+          method: "DELETE"
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          setProducts(products.filter(p => p._id !== id));
+          showNotification("Produk berhasil dihapus!", "success");
+        } else {
+          showNotification("Gagal menghapus produk: " + data.error, "error");
+        }
+      } catch (error) {
+        console.error("Error deleting product:", error);
+        showNotification("Terjadi kesalahan saat menghapus produk!", "error");
+      }
     }
+  };
+
+  const handleExportPDF = async () => {
+    showNotification("Mengekspor data ke PDF...", "info");
+    try {
+      const response = await fetch("/api/export/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          startDate: dateRange.startDate, 
+          endDate: dateRange.endDate,
+          data: { checkouts, products, summary, analytics }
+        })
+      });
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-${dateRange.startDate}-${dateRange.endDate}.pdf`;
+      a.click();
+      showNotification("PDF berhasil diunduh!", "success");
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      showNotification("Gagal mengekspor PDF", "error");
+    }
+  };
+
+  const handleExportExcel = async () => {
+    showNotification("Mengekspor data ke Excel...", "info");
+    try {
+      const response = await fetch("/api/export/excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          startDate: dateRange.startDate, 
+          endDate: dateRange.endDate,
+          data: { checkouts, products, summary, analytics }
+        })
+      });
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `laporan-${dateRange.startDate}-${dateRange.endDate}.xlsx`;
+      a.click();
+      showNotification("Excel berhasil diunduh!", "success");
+    } catch (error) {
+      console.error("Error exporting Excel:", error);
+      showNotification("Gagal mengekspor Excel", "error");
+    }
+  };
+
+  const getOrderTotal = (checkout) => {
+    if (checkout.amount && checkout.amount > 0) return checkout.amount;
+    if (checkout.total && checkout.total > 0) return checkout.total;
+    if (checkout.items && checkout.items.length > 0) {
+      return checkout.items.reduce((sum, item) => {
+        return sum + ((item.price || 0) * (item.qty || item.quantity || 0));
+      }, 0);
+    }
+    return 0;
   };
 
   const formatPrice = (price) =>
     new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(price || 0);
 
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("id-ID", { year: "numeric", month: "short", day: "numeric" });
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case "PAID": case "SUCCESS": return { bg: "#dcfce7", color: "#15803d" };
+      case "PENDING": case "PENDING_PAYMENT": return { bg: "#fef3c7", color: "#b45309" };
+      case "CANCELLED": case "FAILED": return { bg: "#fee2e2", color: "#b91c1c" };
+      default: return { bg: "#f1f5f9", color: "#64748b" };
+    }
+  };
+
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchProduct.toLowerCase());
+    const matchesCategory = filterCategory === "all" || p.category === filterCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  const categories = ["all", ...new Set(products.map(p => p.category))];
+
+  // Theme colors
+  const theme = {
+    bg: darkMode ? "#0f172a" : "#f8fafc",
+    cardBg: darkMode ? "#1e293b" : "#ffffff",
+    text: darkMode ? "#f1f5f9" : "#1f2937",
+    textSecondary: darkMode ? "#94a3b8" : "#64748b",
+    border: darkMode ? "#334155" : "#e2e8f0",
+    primary: "#3b82f6",
+    success: "#10b981",
+    warning: "#f59e0b",
+    danger: "#ef4444"
+  };
+
   if (loading) {
     return (
       <div style={{ 
+        height: "100vh", 
         display: "flex", 
+        flexDirection: "column",
         alignItems: "center", 
         justifyContent: "center", 
-        minHeight: "100vh",
-        backgroundColor: "#f8fafc"
+        backgroundColor: theme.bg,
+        gap: "20px"
       }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ 
-            fontSize: "48px", 
-            marginBottom: "16px"
-          }}>⚙️</div>
-          <p style={{ fontSize: "18px", color: "#64748b" }}>Loading Dashboard...</p>
-        </div>
+        <div style={{ 
+          width: "60px", 
+          height: "60px", 
+          border: "4px solid " + theme.border, 
+          borderTop: "4px solid " + theme.primary, 
+          borderRadius: "50%", 
+          animation: "spin 1s linear infinite" 
+        }} />
+        <div style={{ fontSize: "18px", fontWeight: "600", color: theme.text }}>Memuat Dashboard...</div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
   return (
-    <div style={{ 
-      minHeight: "100vh", 
-      backgroundColor: "#f8fafc",
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    }}>
-      {/* Add Product Modal */}
-      {showAddProduct && (
+    <div style={{ backgroundColor: theme.bg, minHeight: "100vh", fontFamily: "system-ui, -apple-system, sans-serif", transition: "all 0.3s ease" }}>
+      {/* Notification Toast */}
+      {notification && (
         <div style={{
           position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0,0,0,0.5)",
+          top: "20px",
+          right: "20px",
+          backgroundColor: notification.type === "success" ? theme.success : notification.type === "error" ? theme.danger : theme.primary,
+          color: "white",
+          padding: "16px 24px",
+          borderRadius: "12px",
+          boxShadow: "0 10px 40px rgba(0,0,0,0.2)",
+          zIndex: 9999,
           display: "flex",
           alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000
+          gap: "12px",
+          animation: "slideIn 0.3s ease",
+          maxWidth: "400px"
         }}>
-          <div style={{
-            backgroundColor: "white",
-            borderRadius: "16px",
-            padding: "32px",
-            maxWidth: "500px",
-            width: "90%"
-          }}>
-            <h2 style={{ margin: "0 0 24px 0", fontSize: "24px", fontWeight: "700" }}>
-              ➕ Tambah Produk Baru
-            </h2>
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", fontSize: "14px" }}>
-                Nama Produk
-              </label>
-              <input
-                type="text"
-                value={newProduct.name}
-                onChange={(e) => setNewProduct({...newProduct, name: e.target.value})}
-                placeholder="Contoh: Nasi Goreng"
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e2e8f0",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", fontSize: "14px" }}>
-                Harga (Rp)
-              </label>
-              <input
-                type="number"
-                value={newProduct.price}
-                onChange={(e) => setNewProduct({...newProduct, price: e.target.value})}
-                placeholder="25000"
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e2e8f0",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
-            <div style={{ marginBottom: "24px" }}>
-              <label style={{ display: "block", marginBottom: "8px", fontWeight: "600", fontSize: "14px" }}>
-                Stock
-              </label>
-              <input
-                type="number"
-                value={newProduct.stock}
-                onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})}
-                placeholder="100"
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "2px solid #e2e8f0",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  boxSizing: "border-box"
-                }}
-              />
-            </div>
-            <div style={{ display: "flex", gap: "12px" }}>
-              <button
-                onClick={() => setShowAddProduct(false)}
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  backgroundColor: "#e5e7eb",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
-                }}
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleAddProduct}
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  backgroundColor: "#f97316",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
-                }}
-              >
-                Simpan
-              </button>
-            </div>
-          </div>
+          <span style={{ fontSize: "20px" }}>
+            {notification.type === "success" ? "✅" : notification.type === "error" ? "❌" : "ℹ️"}
+          </span>
+          <span style={{ fontWeight: "600", fontSize: "15px" }}>{notification.message}</span>
+          <style>{`@keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }`}</style>
         </div>
       )}
 
       {/* Header */}
-      <header style={{
-        backgroundColor: "white",
-        borderBottom: "2px solid #e2e8f0",
-        position: "sticky",
-        top: 0,
-        zIndex: 100,
-        boxShadow: "0 1px 3px rgba(0,0,0,0.1)"
-      }}>
-        <div style={{
-          maxWidth: "1400px",
-          margin: "0 auto",
-          padding: "16px 24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between"
-        }}>
+      <div style={{ backgroundColor: darkMode ? "#1e293b" : "white", borderBottom: `1px solid ${theme.border}`, padding: "16px 40px", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }}>
+        <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-            <div style={{
-              width: "48px",
-              height: "48px",
-              backgroundColor: "#ef4444",
-              borderRadius: "12px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "24px"
-            }}>
-              📊
-            </div>
+            <div style={{ width: "48px", height: "48px", backgroundColor: "#3b82f6", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px" }}>📊</div>
             <div>
-              <h1 style={{ 
-                margin: 0, 
-                fontSize: "24px", 
-                fontWeight: "700",
-                color: "#1f2937"
-              }}>
-                Admin Dashboard
-              </h1>
-              <p style={{ 
-                margin: 0, 
-                fontSize: "13px", 
-                color: "#64748b" 
-              }}>
-                VIGWAGON E-commerce Management
-              </p>
+              <h1 style={{ margin: 0, fontSize: "24px", fontWeight: "700", color: theme.text }}>Admin Dashboard</h1>
+              <p style={{ margin: 0, fontSize: "14px", color: theme.textSecondary }}>VIGWAGON E-commerce Management</p>
             </div>
           </div>
-
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{
-              padding: "8px 16px",
-              backgroundColor: "#fef2f2",
-              borderRadius: "8px",
-              border: "1px solid #fecaca"
-            }}>
-              <div style={{ fontSize: "12px", color: "#b91c1c", fontWeight: "600" }}>
-                👤 {userName}
-              </div>
+            {/* Dark Mode Toggle */}
+            <button 
+              onClick={() => setDarkMode(!darkMode)}
+              style={{ 
+                padding: "10px 16px", 
+                backgroundColor: theme.cardBg, 
+                border: `1px solid ${theme.border}`, 
+                borderRadius: "10px", 
+                cursor: "pointer", 
+                fontSize: "20px",
+                transition: "all 0.2s"
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+              onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
+            >
+              {darkMode ? "🌞" : "🌙"}
+            </button>
+
+            {/* Date Range Picker */}
+            <div style={{ position: "relative" }}>
+              <button 
+                onClick={() => setShowDatePicker(!showDatePicker)}
+                style={{ 
+                  padding: "10px 20px", 
+                  backgroundColor: theme.cardBg, 
+                  border: `1px solid ${theme.border}`, 
+                  borderRadius: "10px", 
+                  cursor: "pointer", 
+                  fontWeight: "600",
+                  color: theme.text,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "14px"
+                }}
+              >
+                📅 {formatDate(dateRange.startDate)} - {formatDate(dateRange.endDate)}
+              </button>
+              {showDatePicker && (
+                <div style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: "8px",
+                  backgroundColor: theme.cardBg,
+                  border: `1px solid ${theme.border}`,
+                  borderRadius: "12px",
+                  padding: "20px",
+                  boxShadow: "0 10px 40px rgba(0,0,0,0.15)",
+                  zIndex: 1000,
+                  minWidth: "300px"
+                }}>
+                  <div style={{ marginBottom: "12px" }}>
+                    <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "600", color: theme.text }}>Dari Tanggal</label>
+                    <input 
+                      type="date" 
+                      value={dateRange.startDate}
+                      onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
+                      style={{ 
+                        width: "100%", 
+                        padding: "10px", 
+                        border: `1px solid ${theme.border}`, 
+                        borderRadius: "8px",
+                        backgroundColor: theme.bg,
+                        color: theme.text,
+                        fontSize: "14px"
+                      }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: "16px" }}>
+                    <label style={{ display: "block", marginBottom: "6px", fontSize: "13px", fontWeight: "600", color: theme.text }}>Sampai Tanggal</label>
+                    <input 
+                      type="date" 
+                      value={dateRange.endDate}
+                      onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
+                      style={{ 
+                        width: "100%", 
+                        padding: "10px", 
+                        border: `1px solid ${theme.border}`, 
+                        borderRadius: "8px",
+                        backgroundColor: theme.bg,
+                        color: theme.text,
+                        fontSize: "14px"
+                      }}
+                    />
+                  </div>
+                  <button 
+                    onClick={() => setShowDatePicker(false)}
+                    style={{ 
+                      width: "100%", 
+                      padding: "10px", 
+                      backgroundColor: theme.primary, 
+                      color: "white", 
+                      border: "none", 
+                      borderRadius: "8px", 
+                      cursor: "pointer", 
+                      fontWeight: "600",
+                      fontSize: "14px"
+                    }}
+                  >
+                    Terapkan Filter
+                  </button>
+                </div>
+              )}
             </div>
-            <button
-              onClick={() => router.push("/")}
-              style={{
-                padding: "10px 16px",
-                backgroundColor: "#3b82f6",
-                color: "white",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
+
+            {/* Export Buttons */}
+            <button 
+              onClick={handleExportPDF}
+              style={{ 
+                padding: "10px 20px", 
+                backgroundColor: "#ef4444", 
+                color: "white", 
+                border: "none", 
+                borderRadius: "10px", 
+                cursor: "pointer", 
                 fontWeight: "600",
-                fontSize: "14px"
+                fontSize: "14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
               }}
             >
-              🏠 Kembali ke Shop
+              📄 PDF
             </button>
-            <button
-              onClick={handleLogout}
-              style={{
-                padding: "10px 16px",
-                backgroundColor: "#e5e7eb",
-                color: "#1f2937",
-                border: "none",
-                borderRadius: "8px",
-                cursor: "pointer",
+            <button 
+              onClick={handleExportExcel}
+              style={{ 
+                padding: "10px 20px", 
+                backgroundColor: "#10b981", 
+                color: "white", 
+                border: "none", 
+                borderRadius: "10px", 
+                cursor: "pointer", 
                 fontWeight: "600",
-                fontSize: "14px"
+                fontSize: "14px",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px"
               }}
             >
-              Logout
+              📊 Excel
             </button>
+
+            <div style={{ padding: "10px 20px", backgroundColor: theme.cardBg, border: `1px solid ${theme.border}`, borderRadius: "10px", display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "20px" }}>👤</span>
+              <span style={{ fontWeight: "600", color: theme.text }}>{userName}</span>
+            </div>
+            <button onClick={handleLogout} style={{ padding: "10px 20px", backgroundColor: "#ef4444", color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "14px" }}>Logout</button>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Navigation Tabs */}
-      <div style={{
-        backgroundColor: "white",
-        borderBottom: "1px solid #e2e8f0",
-        position: "sticky",
-        top: "81px",
-        zIndex: 50
-      }}>
-        <div style={{
-          maxWidth: "1400px",
-          margin: "0 auto",
-          padding: "0 24px",
-          display: "flex",
-          gap: "8px"
-        }}>
+      <div style={{ backgroundColor: theme.cardBg, borderBottom: `1px solid ${theme.border}`, padding: "0 40px" }}>
+        <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", gap: "4px" }}>
           {[
-            { id: "overview", label: "📈 Overview" },
-            { id: "orders", label: "🛒 Transaksi" },
-            { id: "products", label: "📦 Produk" },
-            { id: "analytics", label: "📊 Analytics" }
+            { id: "overview", label: "📊 Overview", icon: "📊" },
+            { id: "transactions", label: "💳 Transaksi", icon: "💳" },
+            { id: "products", label: "📦 Produk", icon: "📦" },
+            { id: "analytics", label: "📈 Analytics", icon: "📈" }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               style={{
-                padding: "14px 20px",
-                backgroundColor: "transparent",
+                padding: "16px 24px",
+                backgroundColor: activeTab === tab.id ? theme.primary : "transparent",
+                color: activeTab === tab.id ? "white" : theme.text,
                 border: "none",
-                borderBottom: activeTab === tab.id ? "3px solid #f97316" : "3px solid transparent",
-                color: activeTab === tab.id ? "#f97316" : "#64748b",
-                fontWeight: activeTab === tab.id ? "600" : "500",
+                borderBottom: activeTab === tab.id ? "3px solid " + theme.primary : "3px solid transparent",
                 cursor: "pointer",
-                fontSize: "14px",
-                transition: "all 0.2s"
+                fontWeight: "600",
+                fontSize: "15px",
+                transition: "all 0.2s",
+                borderRadius: "8px 8px 0 0"
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== tab.id) {
+                  e.currentTarget.style.backgroundColor = darkMode ? "#334155" : "#f1f5f9";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== tab.id) {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }
               }}
             >
               {tab.label}
@@ -406,695 +557,787 @@ export default function Dashboard() {
       </div>
 
       {/* Main Content */}
-      <div style={{
-        maxWidth: "1400px",
-        margin: "0 auto",
-        padding: "24px"
-      }}>
+      <div style={{ maxWidth: "1400px", margin: "0 auto", padding: "32px 40px" }}>
+        
         {/* OVERVIEW TAB */}
         {activeTab === "overview" && (
-          <>
-            {/* Stats Cards */}
-            <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", 
-              gap: "20px", 
-              marginBottom: "24px" 
-            }}>
-              <div style={{
-                background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                padding: "24px",
-                borderRadius: "16px",
-                boxShadow: "0 4px 12px rgba(102, 126, 234, 0.4)",
-                color: "white"
-              }}>
-                <div style={{ fontSize: "14px", opacity: 0.9, marginBottom: "8px" }}>Total Produk</div>
-                <div style={{ fontSize: "36px", fontWeight: "700", marginBottom: "4px" }}>
-                  {products.length}
+          <div>
+            {/* Summary Cards with Comparison */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "32px" }}>
+              {[
+                { 
+                  label: "Total Omzet", 
+                  value: formatPrice(summary?.totalOmzet || 0), 
+                  icon: "💰", 
+                  color: "#10b981",
+                  change: comparison?.omzetChange,
+                  description: "Total pendapatan periode ini"
+                },
+                { 
+                  label: "Total Pesanan", 
+                  value: summary?.totalOrders || 0, 
+                  icon: "📦", 
+                  color: "#3b82f6",
+                  change: comparison?.ordersChange,
+                  description: "Jumlah pesanan masuk"
+                },
+                { 
+                  label: "Pesanan Lunas", 
+                  value: summary?.totalPaid || 0, 
+                  icon: "✅", 
+                  color: "#14b8a6",
+                  change: null,
+                  description: "Pesanan yang sudah dibayar"
+                },
+                { 
+                  label: "Avg Order Value", 
+                  value: formatPrice(summary?.avgOrderValue || 0), 
+                  icon: "📊", 
+                  color: "#f59e0b",
+                  change: null,
+                  description: "Rata-rata nilai pesanan"
+                }
+              ].map((card, idx) => (
+                <div 
+                  key={idx} 
+                  style={{ 
+                    backgroundColor: theme.cardBg, 
+                    borderRadius: "16px", 
+                    padding: "24px", 
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                    border: `1px solid ${theme.border}`,
+                    transition: "all 0.3s",
+                    cursor: "pointer",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = "translateY(-4px)";
+                    e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.15)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = "translateY(0)";
+                    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+                  }}
+                >
+                  <div style={{ 
+                    position: "absolute", 
+                    top: "-20px", 
+                    right: "-20px", 
+                    width: "100px", 
+                    height: "100px", 
+                    backgroundColor: card.color, 
+                    opacity: 0.1, 
+                    borderRadius: "50%" 
+                  }} />
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+                    <div style={{ fontSize: "13px", color: theme.textSecondary, fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>{card.label}</div>
+                    <div style={{ fontSize: "32px" }}>{card.icon}</div>
+                  </div>
+                  <div style={{ fontSize: "32px", fontWeight: "700", color: theme.text, marginBottom: "8px" }}>{card.value}</div>
+                  <div style={{ fontSize: "12px", color: theme.textSecondary, marginBottom: "8px" }}>{card.description}</div>
+                  {card.change !== null && card.change !== undefined && (
+                    <div style={{ 
+                      display: "flex", 
+                      alignItems: "center", 
+                      gap: "6px", 
+                      fontSize: "13px", 
+                      fontWeight: "600",
+                      color: parseFloat(card.change) >= 0 ? theme.success : theme.danger
+                    }}>
+                      <span>{parseFloat(card.change) >= 0 ? "📈" : "📉"}</span>
+                      <span>{Math.abs(parseFloat(card.change))}% vs periode sebelumnya</span>
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>📦 Item terdaftar</div>
-              </div>
-
-              <div style={{
-                background: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
-                padding: "24px",
-                borderRadius: "16px",
-                boxShadow: "0 4px 12px rgba(245, 87, 108, 0.4)",
-                color: "white"
-              }}>
-                <div style={{ fontSize: "14px", opacity: 0.9, marginBottom: "8px" }}>Total Order</div>
-                <div style={{ fontSize: "36px", fontWeight: "700", marginBottom: "4px" }}>
-                  {summary?.totalOrders ?? 0}
-                </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>
-                  🟢 {summary?.totalPaid ?? 0} Paid | 🟡 {summary?.totalPending ?? 0} Pending
-                </div>
-              </div>
-
-              <div style={{
-                background: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-                padding: "24px",
-                borderRadius: "16px",
-                boxShadow: "0 4px 12px rgba(79, 172, 254, 0.4)",
-                color: "white"
-              }}>
-                <div style={{ fontSize: "14px", opacity: 0.9, marginBottom: "8px" }}>Total Omzet</div>
-                <div style={{ fontSize: "32px", fontWeight: "700", marginBottom: "4px" }}>
-                  {formatPrice(summary?.totalOmzet ?? 0)}
-                </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>💰 Revenue keseluruhan</div>
-              </div>
-
-              <div style={{
-                background: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
-                padding: "24px",
-                borderRadius: "16px",
-                boxShadow: "0 4px 12px rgba(250, 112, 154, 0.4)",
-                color: "white"
-              }}>
-                <div style={{ fontSize: "14px", opacity: 0.9, marginBottom: "8px" }}>Avg Order Value</div>
-                <div style={{ fontSize: "32px", fontWeight: "700", marginBottom: "4px" }}>
-                  {formatPrice(summary?.totalPaid > 0 ? (summary?.totalOmzet / summary?.totalPaid) : 0)}
-                </div>
-                <div style={{ fontSize: "12px", opacity: 0.8 }}>📈 Per transaksi</div>
-              </div>
+              ))}
             </div>
 
-            {/* Recent Activity */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "20px"
-            }}>
+            {/* Quick Stats */}
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "20px", marginBottom: "32px" }}>
               {/* Recent Orders */}
-              <div style={{
-                backgroundColor: "white",
-                borderRadius: "16px",
-                padding: "24px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-              }}>
-                <h2 style={{ 
-                  margin: "0 0 20px 0", 
-                  fontSize: "18px", 
-                  fontWeight: "700",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}>
-                  🛒 Transaksi Terbaru
-                </h2>
-                <div style={{ maxHeight: "300px", overflowY: "auto" }}>
-                  {checkouts.slice(0, 5).map((c) => (
-                    <div key={c._id} style={{
-                      padding: "12px",
-                      borderBottom: "1px solid #f1f5f9",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
-                    }}>
-                      <div>
-                        <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "4px" }}>
-                          {c.userEmail}
-                        </div>
-                        <div style={{ fontSize: "12px", color: "#64748b" }}>
-                          {new Date(c.createdAt).toLocaleDateString("id-ID")}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: "700", color: "#14b8a6", fontSize: "14px" }}>
-                          {formatPrice(c.total)}
-                        </div>
-                        <span style={{
-                          padding: "2px 8px",
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text, display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>📋</span> Pesanan Terbaru
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxHeight: "400px", overflowY: "auto" }}>
+                  {checkouts.slice(0, 5).map((checkout, idx) => {
+                    const statusStyle = getStatusColor(checkout.status);
+                    return (
+                      <div 
+                        key={idx} 
+                        style={{ 
+                          display: "flex", 
+                          justifyContent: "space-between", 
+                          alignItems: "center", 
+                          padding: "16px", 
+                          backgroundColor: theme.bg, 
                           borderRadius: "12px",
-                          fontSize: "11px",
-                          fontWeight: "600",
-                          backgroundColor: c.status === "PAID" ? "#dcfce7" : "#fef3c7",
-                          color: c.status === "PAID" ? "#15803d" : "#b45309"
-                        }}>
-                          {c.status}
-                        </span>
+                          border: `1px solid ${theme.border}`,
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.transform = "translateX(4px)"}
+                        onMouseLeave={(e) => e.currentTarget.style.transform = "translateX(0)"}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: "600", color: theme.text, marginBottom: "4px", fontSize: "14px" }}>{checkout.customerName || "Customer"}</div>
+                          <div style={{ fontSize: "12px", color: theme.textSecondary }}>{formatDate(checkout.createdAt)}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: "700", color: theme.success, marginBottom: "4px", fontSize: "15px" }}>{formatPrice(getOrderTotal(checkout))}</div>
+                          <div style={{ 
+                            padding: "4px 12px", 
+                            backgroundColor: statusStyle.bg, 
+                            color: statusStyle.color, 
+                            borderRadius: "6px", 
+                            fontSize: "11px", 
+                            fontWeight: "600",
+                            display: "inline-block"
+                          }}>
+                            {checkout.status}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Top Products */}
-              <div style={{
-                backgroundColor: "white",
-                borderRadius: "16px",
-                padding: "24px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-              }}>
-                <h2 style={{ 
-                  margin: "0 0 20px 0", 
-                  fontSize: "18px", 
-                  fontWeight: "700",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px"
-                }}>
-                  🏆 Top Produk
-                </h2>
-                <div style={{ maxHeight: "300px", overflowY: "auto" }}>
-                  {products.slice(0, 5).map((p, idx) => (
-                    <div key={p._id} style={{
-                      padding: "12px",
-                      borderBottom: "1px solid #f1f5f9",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center"
+              {/* Low Stock Alert */}
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text, display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>⚠️</span> Stock Rendah
+                </h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {products.filter(p => (p.stock || 0) < 10).slice(0, 5).map((product, idx) => (
+                    <div key={idx} style={{ 
+                      padding: "12px", 
+                      backgroundColor: theme.bg, 
+                      borderRadius: "10px",
+                      borderLeft: `4px solid ${theme.danger}`,
+                      border: `1px solid ${theme.border}`
                     }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                        <div style={{
-                          width: "32px",
-                          height: "32px",
-                          borderRadius: "8px",
-                          backgroundColor: "#f1f5f9",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: "700",
-                          color: "#64748b"
-                        }}>
-                          #{idx + 1}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: "600", fontSize: "14px" }}>
-                            {p.name}
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#64748b" }}>
-                            Stock: {p.stock}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ fontWeight: "700", color: "#14b8a6", fontSize: "14px" }}>
-                        {formatPrice(p.price)}
-                      </div>
+                      <div style={{ fontWeight: "600", color: theme.text, fontSize: "13px", marginBottom: "4px" }}>{product.name}</div>
+                      <div style={{ fontSize: "12px", color: theme.danger, fontWeight: "600" }}>Stock: {product.stock || 0} unit</div>
                     </div>
                   ))}
+                  {products.filter(p => (p.stock || 0) < 10).length === 0 && (
+                    <div style={{ textAlign: "center", padding: "40px 20px", color: theme.textSecondary }}>
+                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>✅</div>
+                      <div style={{ fontSize: "14px", fontWeight: "600" }}>Semua produk stock aman</div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
-          </>
+
+            {/* Quick Actions */}
+            <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+              <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text }}>⚡ Quick Actions</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px" }}>
+                {[
+                  { label: "Tambah Produk", icon: "➕", action: () => { setActiveTab("products"); setShowAddProduct(true); }, color: "#3b82f6" },
+                  { label: "Lihat Analytics", icon: "📊", action: () => setActiveTab("analytics"), color: "#10b981" },
+                  { label: "Export Laporan", icon: "📄", action: handleExportPDF, color: "#ef4444" },
+                  { label: "Refresh Data", icon: "🔄", action: () => window.location.reload(), color: "#f59e0b" }
+                ].map((action, idx) => (
+                  <button
+                    key={idx}
+                    onClick={action.action}
+                    style={{
+                      padding: "20px",
+                      backgroundColor: theme.bg,
+                      border: `2px solid ${theme.border}`,
+                      borderRadius: "12px",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      fontSize: "14px",
+                      color: theme.text,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "12px",
+                      transition: "all 0.2s"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = action.color;
+                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = theme.border;
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                  >
+                    <span style={{ fontSize: "32px" }}>{action.icon}</span>
+                    <span>{action.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         )}
 
-        {/* ORDERS TAB */}
-        {activeTab === "orders" && (
-          <div style={{
-            backgroundColor: "white",
-            borderRadius: "16px",
-            padding: "24px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-          }}>
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "20px"
-            }}>
-              <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "700" }}>
-                🛒 Semua Transaksi
-              </h2>
-              <div style={{
-                padding: "8px 16px",
-                backgroundColor: "#f1f5f9",
-                borderRadius: "8px",
-                fontSize: "14px",
-                fontWeight: "600",
-                color: "#475569"
-              }}>
-                Total: {checkouts.length} transaksi
+        {/* TRANSACTIONS TAB */}
+        {activeTab === "transactions" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "700", color: theme.text }}>💳 Daftar Transaksi</h2>
+              <div style={{ display: "flex", gap: "12px" }}>
+                <input 
+                  type="text" 
+                  placeholder="Cari transaksi..." 
+                  style={{ 
+                    padding: "12px 20px", 
+                    border: `1px solid ${theme.border}`, 
+                    borderRadius: "10px", 
+                    fontSize: "14px",
+                    width: "300px",
+                    backgroundColor: theme.bg,
+                    color: theme.text
+                  }}
+                />
+                <select style={{ 
+                  padding: "12px 20px", 
+                  border: `1px solid ${theme.border}`, 
+                  borderRadius: "10px", 
+                  fontSize: "14px",
+                  backgroundColor: theme.bg,
+                  color: theme.text,
+                  cursor: "pointer"
+                }}>
+                  <option>Semua Status</option>
+                  <option>PAID</option>
+                  <option>PENDING</option>
+                  <option>CANCELLED</option>
+                </select>
               </div>
             </div>
 
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ 
-                    backgroundColor: "#f8fafc", 
-                    borderBottom: "2px solid #e2e8f0" 
-                  }}>
-                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      ID
-                    </th>
-                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      Tanggal
-                    </th>
-                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      Customer
-                    </th>
-                    <th style={{ padding: "12px 16px", textAlign: "left", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      Items
-                    </th>
-                    <th style={{ padding: "12px 16px", textAlign: "center", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      Status
-                    </th>
-                    <th style={{ padding: "12px 16px", textAlign: "right", fontWeight: "600", fontSize: "13px", color: "#64748b" }}>
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {checkouts.map((c) => (
-                    <tr key={c._id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "16px", fontSize: "13px", fontWeight: "600", color: "#64748b" }}>
-                        #{c._id.slice(-6)}
-                      </td>
-                      <td style={{ padding: "16px", fontSize: "14px" }}>
-                        {new Date(c.createdAt).toLocaleString("id-ID", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        })}
-                      </td>
-                      <td style={{ padding: "16px", fontSize: "14px", fontWeight: "500" }}>
-                        {c.userEmail || "-"}
-                      </td>
-                      <td style={{ padding: "16px", fontSize: "13px", color: "#64748b" }}>
-                        {c.items?.map(i => `${i.name} ×${i.quantity}`).join(", ")}
-                      </td>
-                      <td style={{ padding: "16px", textAlign: "center" }}>
-                        <span style={{
-                          padding: "6px 12px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "600",
-                          backgroundColor: c.status === "PAID" ? "#dcfce7" : c.status === "PENDING_PAYMENT" ? "#fef3c7" : "#f3f4f6",
-                          color: c.status === "PAID" ? "#15803d" : c.status === "PENDING_PAYMENT" ? "#b45309" : "#6b7280"
-                        }}>
-                          {c.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: "16px", textAlign: "right", fontSize: "15px", fontWeight: "700", color: "#14b8a6" }}>
-                        {formatPrice(c.total)}
-                      </td>
+            <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: theme.bg, borderBottom: `2px solid ${theme.border}` }}>
+                      {["Order ID", "Customer", "Tanggal", "Items", "Total", "Status", "Aksi"].map((header, idx) => (
+                        <th key={idx} style={{ padding: "16px 20px", textAlign: "left", fontSize: "13px", fontWeight: "700", color: theme.text, textTransform: "uppercase", letterSpacing: "0.5px" }}>{header}</th>
+                      ))}
                     </tr>
-                  ))}
-                  {checkouts.length === 0 && (
-                    <tr>
-                      <td colSpan={6} style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
-                        <div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div>
-                        <div style={{ fontSize: "16px", fontWeight: "600" }}>Belum ada transaksi</div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {checkouts.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" style={{ padding: "60px 20px", textAlign: "center", color: theme.textSecondary }}>
+                          <div style={{ fontSize: "64px", marginBottom: "16px" }}>📭</div>
+                          <div style={{ fontSize: "18px", fontWeight: "600" }}>Belum ada transaksi</div>
+                        </td>
+                      </tr>
+                    ) : (
+                      checkouts.map((checkout, idx) => {
+                        const statusStyle = getStatusColor(checkout.status);
+                        return (
+                          <tr 
+                            key={idx} 
+                            style={{ 
+                              borderBottom: `1px solid ${theme.border}`,
+                              transition: "all 0.2s"
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = theme.bg}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}
+                          >
+                            <td style={{ padding: "16px 20px", color: theme.text, fontWeight: "600", fontSize: "13px" }}>#{checkout._id?.slice(-6) || idx}</td>
+                            <td style={{ padding: "16px 20px", color: theme.text, fontSize: "14px" }}>{checkout.customerName || "Customer"}</td>
+                            <td style={{ padding: "16px 20px", color: theme.textSecondary, fontSize: "13px" }}>{formatDate(checkout.createdAt)}</td>
+                            <td style={{ padding: "16px 20px", color: theme.text, fontSize: "14px" }}>{checkout.items?.length || 0} item</td>
+                            <td style={{ padding: "16px 20px", color: theme.success, fontWeight: "700", fontSize: "15px" }}>{formatPrice(getOrderTotal(checkout))}</td>
+                            <td style={{ padding: "16px 20px" }}>
+                              <span style={{ padding: "6px 14px", backgroundColor: statusStyle.bg, color: statusStyle.color, borderRadius: "8px", fontSize: "12px", fontWeight: "600", display: "inline-block" }}>
+                                {checkout.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: "16px 20px" }}>
+                              <button style={{ padding: "8px 16px", backgroundColor: theme.primary, color: "white", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "12px", fontWeight: "600" }}>Detail</button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
 
         {/* PRODUCTS TAB */}
         {activeTab === "products" && (
-          <div style={{
-            backgroundColor: "white",
-            borderRadius: "16px",
-            padding: "24px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-          }}>
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "20px"
-            }}>
-              <h2 style={{ margin: 0, fontSize: "20px", fontWeight: "700" }}>
-                📦 Manajemen Produk
-              </h2>
-              <button
-                onClick={() => setShowAddProduct(true)}
-                style={{
-                  padding: "10px 20px",
-                  backgroundColor: "#f97316",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontWeight: "600",
-                  fontSize: "14px"
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+              <h2 style={{ margin: 0, fontSize: "24px", fontWeight: "700", color: theme.text }}>📦 Manajemen Produk</h2>
+              <button 
+                onClick={() => setShowAddProduct(true)} 
+                style={{ 
+                  padding: "12px 24px", 
+                  backgroundColor: theme.primary, 
+                  color: "white", 
+                  border: "none", 
+                  borderRadius: "10px", 
+                  cursor: "pointer", 
+                  fontWeight: "600", 
+                  fontSize: "14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  transition: "all 0.2s"
                 }}
+                onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.05)"}
+                onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
               >
                 ➕ Tambah Produk
               </button>
             </div>
 
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-              gap: "20px"
-            }}>
-              {products.map((p) => (
-                <div
-                  key={p._id}
-                  style={{
-                    border: "2px solid #e2e8f0",
-                    borderRadius: "12px",
-                    padding: "20px",
-                    position: "relative"
-                  }}
-                >
-                  <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "8px", color: "#1f2937" }}>
-                    {p.name}
-                  </h3>
-                  <div style={{ 
-                    fontSize: "24px", 
-                    fontWeight: "700", 
-                    color: "#14b8a6",
-                    marginBottom: "12px"
-                  }}>
-                    {formatPrice(p.price)}
+            {/* Search and Filter */}
+            <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
+              <input 
+                type="text" 
+                placeholder="Cari produk..." 
+                value={searchProduct}
+                onChange={(e) => setSearchProduct(e.target.value)}
+                style={{ 
+                  flex: 1,
+                  padding: "12px 20px", 
+                  border: `1px solid ${theme.border}`, 
+                  borderRadius: "10px", 
+                  fontSize: "14px",
+                  backgroundColor: theme.bg,
+                  color: theme.text
+                }}
+              />
+              <select 
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                style={{ 
+                  padding: "12px 20px", 
+                  border: `1px solid ${theme.border}`, 
+                  borderRadius: "10px", 
+                  fontSize: "14px",
+                  backgroundColor: theme.bg,
+                  color: theme.text,
+                  cursor: "pointer",
+                  minWidth: "150px"
+                }}
+              >
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat === "all" ? "Semua Kategori" : cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "20px" }}>
+              {filteredProducts.length === 0 ? (
+                <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "60px 20px", color: theme.textSecondary }}>
+                  <div style={{ fontSize: "64px", marginBottom: "16px" }}>📦</div>
+                  <div style={{ fontSize: "18px", fontWeight: "600", marginBottom: "8px" }}>
+                    {searchProduct || filterCategory !== "all" ? "Produk tidak ditemukan" : "Belum ada produk"}
                   </div>
-                  <div style={{
-                    padding: "6px 12px",
-                    backgroundColor: p.stock > 20 ? "#dcfce7" : "#fef3c7",
-                    color: p.stock > 20 ? "#15803d" : "#b45309",
-                    borderRadius: "8px",
-                    fontSize: "13px",
-                    fontWeight: "600",
-                    marginBottom: "16px",
-                    display: "inline-block"
-                  }}>
-                    📦 Stock: {p.stock}
-                  </div>
-                  <button
-                    onClick={() => handleDeleteProduct(p._id)}
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      backgroundColor: "#ef4444",
-                      color: "white",
-                      border: "none",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                      fontSize: "14px"
+                  {!searchProduct && filterCategory === "all" && (
+                    <button 
+                      onClick={() => setShowAddProduct(true)} 
+                      style={{ padding: "12px 24px", backgroundColor: theme.primary, color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "14px", marginTop: "12px" }}
+                    >
+                      ➕ Tambah Produk
+                    </button>
+                  )}
+                </div>
+              ) : (
+                filteredProducts.map((product) => (
+                  <div 
+                    key={product._id} 
+                    style={{ 
+                      backgroundColor: theme.cardBg,
+                      border: `2px solid ${theme.border}`, 
+                      borderRadius: "16px", 
+                      padding: "24px",
+                      transition: "all 0.3s",
+                      cursor: "pointer"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-8px)";
+                      e.currentTarget.style.boxShadow = "0 12px 32px rgba(0,0,0,0.15)";
+                      e.currentTarget.style.borderColor = theme.primary;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "none";
+                      e.currentTarget.style.borderColor = theme.border;
                     }}
                   >
-                    🗑️ Hapus Produk
-                  </button>
-                </div>
-              ))}
+                    <div style={{ 
+                      width: "100%", 
+                      height: "180px", 
+                      backgroundColor: theme.bg, 
+                      borderRadius: "12px", 
+                      marginBottom: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "64px"
+                    }}>
+                      📦
+                    </div>
+                    <h3 style={{ fontSize: "18px", fontWeight: "700", marginBottom: "8px", color: theme.text }}>{product.name}</h3>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <div style={{ fontSize: "24px", fontWeight: "700", color: theme.success }}>{formatPrice(product.price)}</div>
+                      <div style={{ 
+                        padding: "6px 12px", 
+                        backgroundColor: (product.stock || 0) > 20 ? "#dcfce7" : (product.stock || 0) > 10 ? "#fef3c7" : "#fee2e2", 
+                        color: (product.stock || 0) > 20 ? "#15803d" : (product.stock || 0) > 10 ? "#b45309" : "#b91c1c", 
+                        borderRadius: "8px", 
+                        fontSize: "13px", 
+                        fontWeight: "600"
+                      }}>
+                        Stock: {product.stock || 0}
+                      </div>
+                    </div>
+                    <div style={{ 
+                      padding: "6px 12px", 
+                      backgroundColor: theme.bg, 
+                      borderRadius: "8px", 
+                      fontSize: "12px", 
+                      fontWeight: "600",
+                      color: theme.textSecondary,
+                      marginBottom: "16px",
+                      display: "inline-block"
+                    }}>
+                      🏷️ {product.category || "Other"}
+                    </div>
+                    <button 
+                      onClick={() => handleDeleteProduct(product._id)} 
+                      style={{ 
+                        width: "100%", 
+                        padding: "12px", 
+                        backgroundColor: theme.danger, 
+                        color: "white", 
+                        border: "none", 
+                        borderRadius: "10px", 
+                        cursor: "pointer", 
+                        fontWeight: "600", 
+                        fontSize: "14px",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#dc2626"}
+                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = theme.danger}
+                    >
+                      🗑️ Hapus Produk
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
 
-        {/* ANALYTICS TAB */}
+        {/* ANALYTICS TAB - Enhanced Version */}
         {activeTab === "analytics" && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px" }}>
-            {/* Revenue Chart - 7 Hari */}
-            <div style={{
-              backgroundColor: "white",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-            }}>
-              <h3 style={{ 
-                margin: "0 0 20px 0", 
-                fontSize: "18px", 
-                fontWeight: "700",
-                color: "#1f2937"
-              }}>
-                📈 Omzet Per Hari (7 Hari)
-              </h3>
+          <div>
+            <h2 style={{ margin: "0 0 24px 0", fontSize: "24px", fontWeight: "700", color: theme.text }}>📈 Analytics & Insights</h2>
+            
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px" }}>
               
-              <div style={{ height: "300px", display: "flex", alignItems: "flex-end", gap: "12px", marginBottom: "16px" }}>
-                {[
-                  { hari: "Sen", nilai: 150000 },
-                  { hari: "Sel", nilai: 220000 },
-                  { hari: "Rab", nilai: 185000 },
-                  { hari: "Kam", nilai: 280000 },
-                  { hari: "Jum", nilai: 340000 },
-                  { hari: "Sab", nilai: 425000 },
-                  { hari: "Min", nilai: 380000 }
-                ].map((item, idx) => {
-                  const maxVal = 425000;
-                  const height = (item.nilai / maxVal) * 250;
-                  return (
-                    <div key={idx} style={{ flex: 1 }}>
-                      <div 
-                        style={{
-                          height: `${height}px`,
-                          backgroundColor: "#14b8a6",
-                          borderRadius: "8px 8px 0 0",
-                          cursor: "pointer",
-                          transition: "all 0.2s"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#0d9488"}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#14b8a6"}
-                        title={`${item.hari}: ${formatPrice(item.nilai)}`}
-                      />
-                      <div style={{ 
-                        textAlign: "center", 
-                        marginTop: "8px", 
-                        fontSize: "12px", 
-                        fontWeight: "600",
-                        color: "#64748b"
-                      }}>
-                        {item.hari}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              <div style={{
-                padding: "12px",
-                backgroundColor: "#f0fdf4",
-                borderRadius: "8px",
-                border: "1px solid #dcfce7",
-                fontSize: "13px",
-                color: "#15803d"
-              }}>
-                💰 Total Minggu: {formatPrice(1980000)}
-              </div>
-            </div>
-
-            {/* Status Distribution */}
-            <div style={{
-              backgroundColor: "white",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-            }}>
-              <h3 style={{ 
-                margin: "0 0 20px 0", 
-                fontSize: "18px", 
-                fontWeight: "700",
-                color: "#1f2937"
-              }}>
-                📊 Status Transaksi
-              </h3>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                {[
-                  { label: "✅ PAID", value: summary?.totalPaid || 0, total: summary?.totalOrders || 5, color: "#10b981" },
-                  { label: "⏳ PENDING", value: summary?.totalPending || 0, total: summary?.totalOrders || 5, color: "#f59e0b" },
-                  { label: "❌ CANCELLED", value: 0, total: summary?.totalOrders || 5, color: "#ef4444" }
-                ].map((item, idx) => {
-                  const percentage = item.total > 0 ? (item.value / item.total) * 100 : 0;
-                  return (
-                    <div key={idx}>
-                      <div style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: "8px",
-                        fontSize: "14px"
-                      }}>
-                        <span style={{ fontWeight: "600", color: "#1f2937" }}>
-                          {item.label}
-                        </span>
-                        <span style={{ color: "#64748b" }}>
-                          {item.value} / {item.total}
-                        </span>
-                      </div>
-                      <div style={{
-                        width: "100%",
-                        height: "8px",
-                        backgroundColor: "#f1f5f9",
-                        borderRadius: "4px",
-                        overflow: "hidden"
-                      }}>
-                        <div style={{
-                          width: `${percentage}%`,
-                          height: "100%",
-                          backgroundColor: item.color,
-                          transition: "width 0.3s ease"
-                        }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Monthly Sales */}
-            <div style={{
-              backgroundColor: "white",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-            }}>
-              <h3 style={{ 
-                margin: "0 0 20px 0", 
-                fontSize: "18px", 
-                fontWeight: "700",
-                color: "#1f2937"
-              }}>
-                💳 Penjualan Per Bulan
-              </h3>
-              
-              <div style={{ height: "250px", display: "flex", alignItems: "flex-end", gap: "10px", marginBottom: "16px" }}>
-                {[
-                  { bulan: "Jan", nilai: 500000 },
-                  { bulan: "Feb", nilai: 650000 },
-                  { bulan: "Mar", nilai: 720000 },
-                  { bulan: "Apr", nilai: 580000 },
-                  { bulan: "May", nilai: 890000 },
-                  { bulan: "Jun", nilai: 1200000 },
-                  { bulan: "Jul", nilai: 950000 },
-                  { bulan: "Aug", nilai: 1100000 },
-                  { bulan: "Sep", nilai: 1320000 },
-                  { bulan: "Oct", nilai: 1980000 }
-                ].map((item, idx) => {
-                  const maxVal = 1980000;
-                  const height = (item.nilai / maxVal) * 200;
-                  return (
-                    <div key={idx} style={{ flex: 1 }}>
-                      <div 
-                        style={{
-                          height: `${height}px`,
-                          backgroundColor: "#3b82f6",
-                          borderRadius: "6px 6px 0 0",
-                          cursor: "pointer",
-                          transition: "all 0.2s"
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#1d4ed8"}
-                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#3b82f6"}
-                        title={`${item.bulan}: ${formatPrice(item.nilai)}`}
-                      />
-                      <div style={{ 
-                        textAlign: "center", 
-                        marginTop: "6px", 
-                        fontSize: "11px", 
-                        fontWeight: "600",
-                        color: "#64748b"
-                      }}>
-                        {item.bulan}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              
-              <div style={{
-                padding: "12px",
-                backgroundColor: "#f0f9ff",
-                borderRadius: "8px",
-                border: "1px solid #bae6fd",
-                fontSize: "13px",
-                color: "#0369a1"
-              }}>
-                📊 Total YTD: {formatPrice(9900000)}
-              </div>
-            </div>
-
-            {/* Top Products */}
-            <div style={{
-              backgroundColor: "white",
-              borderRadius: "16px",
-              padding: "24px",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
-            }}>
-              <h3 style={{ 
-                margin: "0 0 20px 0", 
-                fontSize: "18px", 
-                fontWeight: "700",
-                color: "#1f2937"
-              }}>
-                🏆 Produk Terpopuler
-              </h3>
-              
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                {[
-                  { nama: "Sate Kambing", terjual: 45, revenue: 1575000 },
-                  { nama: "Bakmie", terjual: 38, revenue: 760000 },
-                  { nama: "Nasi Goreng", terjual: 32, revenue: 800000 },
-                  { nama: "Sop Kambing", terjual: 28, revenue: 1120000 },
-                  { nama: "Gado-Gado", terjual: 24, revenue: 432000 }
-                ].map((item, idx) => (
-                  <div key={idx} style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "12px",
-                    backgroundColor: "#f8fafc",
-                    borderRadius: "8px",
-                    borderLeft: `4px solid ${["#ef4444", "#f97316", "#eab308", "#10b981", "#3b82f6"][idx]}`
-                  }}>
-                    <div>
-                      <div style={{ fontWeight: "600", fontSize: "14px", color: "#1f2937" }}>
-                        #{idx + 1} {item.nama}
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#64748b" }}>
-                        Terjual: {item.terjual} unit
-                      </div>
-                    </div>
-                    <div style={{
-                      fontSize: "15px",
-                      fontWeight: "700",
-                      color: "#14b8a6",
-                      textAlign: "right"
+              {/* Daily Revenue Chart with Enhanced Interactivity */}
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                  <h3 style={{ margin: 0, fontSize: "18px", fontWeight: "700", color: theme.text }}>📈 Omzet Per Hari (7 Hari)</h3>
+                  {comparison?.omzetChange && (
+                    <div style={{ 
+                      padding: "6px 12px", 
+                      backgroundColor: parseFloat(comparison.omzetChange) >= 0 ? "#dcfce7" : "#fee2e2",
+                      color: parseFloat(comparison.omzetChange) >= 0 ? "#15803d" : "#b91c1c",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      fontWeight: "600"
                     }}>
-                      {formatPrice(item.revenue)}
+                      {parseFloat(comparison.omzetChange) >= 0 ? "📈" : "📉"} {Math.abs(parseFloat(comparison.omzetChange))}%
+                    </div>
+                  )}
+                </div>
+                <div style={{ height: "300px", display: "flex", alignItems: "flex-end", gap: "12px", marginBottom: "16px", position: "relative" }}>
+                  {analytics?.dailyRevenue && analytics.dailyRevenue.length > 0 ? (
+                    analytics.dailyRevenue.map((item, idx) => {
+                      const maxVal = Math.max(...analytics.dailyRevenue.map(d => d.amount), 1);
+                      const height = (item.amount / maxVal) * 250;
+                      const isHovered = hoveredChart === `daily-${idx}`;
+                      return (
+                        <div key={idx} style={{ flex: 1, position: "relative" }}>
+                          <div 
+                            style={{ 
+                              height: `${height}px`, 
+                              backgroundColor: isHovered ? theme.primary : theme.success,
+                              borderRadius: "8px 8px 0 0", 
+                              cursor: "pointer", 
+                              transition: "all 0.3s",
+                              transform: isHovered ? "scale(1.05)" : "scale(1)"
+                            }} 
+                            onMouseEnter={() => setHoveredChart(`daily-${idx}`)}
+                            onMouseLeave={() => setHoveredChart(null)}
+                          />
+                          {isHovered && (
+                            <div style={{
+                              position: "absolute",
+                              bottom: `${height + 10}px`,
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              backgroundColor: "rgba(0,0,0,0.9)",
+                              color: "white",
+                              padding: "8px 12px",
+                              borderRadius: "8px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              whiteSpace: "nowrap",
+                              zIndex: 10
+                            }}>
+                              {formatPrice(item.amount)}
+                            </div>
+                          )}
+                          <div style={{ textAlign: "center", marginTop: "8px", fontSize: "12px", fontWeight: "600", color: theme.textSecondary }}>{item.day}</div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ width: "100%", textAlign: "center", color: theme.textSecondary, paddingTop: "100px" }}>
+                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>📊</div>
+                      <div style={{ fontSize: "14px", fontWeight: "600" }}>Belum ada data 7 hari terakhir</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: "12px", backgroundColor: theme.bg, borderRadius: "8px", border: `1px solid ${theme.border}`, fontSize: "14px", color: theme.text, fontWeight: "600" }}>
+                  💰 Total Minggu: <span style={{ color: theme.success }}>{formatPrice(analytics?.weeklyTotal || 0)}</span>
+                </div>
+              </div>
+
+              {/* Status Distribution */}
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text }}>📊 Status Transaksi</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  {[
+                    { label: "✅ PAID", value: summary?.totalPaid || 0, total: summary?.totalOrders || 1, color: theme.success },
+                    { label: "⏳ PENDING", value: summary?.totalPending || 0, total: summary?.totalOrders || 1, color: theme.warning },
+                    { label: "❌ CANCELLED", value: summary?.totalCancelled || 0, total: summary?.totalOrders || 1, color: theme.danger }
+                  ].map((item, idx) => {
+                    const percentage = item.total > 0 ? (item.value / item.total) * 100 : 0;
+                    return (
+                      <div key={idx}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "14px" }}>
+                          <span style={{ fontWeight: "600", color: theme.text }}>{item.label}</span>
+                          <span style={{ color: theme.textSecondary, fontWeight: "600" }}>{item.value} / {item.total} ({percentage.toFixed(0)}%)</span>
+                        </div>
+                        <div style={{ width: "100%", height: "10px", backgroundColor: theme.bg, borderRadius: "10px", overflow: "hidden", position: "relative" }}>
+                          <div style={{ 
+                            width: `${percentage}%`, 
+                            height: "100%", 
+                            backgroundColor: item.color, 
+                            transition: "width 0.5s ease",
+                            borderRadius: "10px"
+                          }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Monthly Sales */}
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text }}>💳 Penjualan Per Bulan</h3>
+                <div style={{ height: "250px", display: "flex", alignItems: "flex-end", gap: "10px", marginBottom: "16px" }}>
+                  {analytics?.monthlyRevenue && analytics.monthlyRevenue.length > 0 ? (
+                    analytics.monthlyRevenue.map((item, idx) => {
+                      const maxVal = Math.max(...analytics.monthlyRevenue.map(m => m.amount), 1);
+                      const height = (item.amount / maxVal) * 200;
+                      const isHovered = hoveredChart === `monthly-${idx}`;
+                      return (
+                        <div key={idx} style={{ flex: 1, position: "relative" }}>
+                          <div 
+                            style={{ 
+                              height: `${height}px`, 
+                              backgroundColor: isHovered ? "#1d4ed8" : theme.primary,
+                              borderRadius: "6px 6px 0 0", 
+                              cursor: "pointer", 
+                              transition: "all 0.3s",
+                              transform: isHovered ? "scale(1.05)" : "scale(1)"
+                            }} 
+                            onMouseEnter={() => setHoveredChart(`monthly-${idx}`)}
+                            onMouseLeave={() => setHoveredChart(null)}
+                          />
+                          {isHovered && (
+                            <div style={{
+                              position: "absolute",
+                              bottom: `${height + 10}px`,
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              backgroundColor: "rgba(0,0,0,0.9)",
+                              color: "white",
+                              padding: "8px 12px",
+                              borderRadius: "8px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              whiteSpace: "nowrap",
+                              zIndex: 10
+                            }}>
+                              {formatPrice(item.amount)}
+                            </div>
+                          )}
+                          <div style={{ textAlign: "center", marginTop: "6px", fontSize: "11px", fontWeight: "600", color: theme.textSecondary }}>{item.month}</div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ width: "100%", textAlign: "center", color: theme.textSecondary, paddingTop: "80px" }}>
+                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>📊</div>
+                      <div style={{ fontSize: "14px", fontWeight: "600" }}>Belum ada data bulanan</div>
+                    </div>
+                  )}
+                </div>
+                <div style={{ padding: "12px", backgroundColor: theme.bg, borderRadius: "8px", border: `1px solid ${theme.border}`, fontSize: "14px", color: theme.text, fontWeight: "600" }}>
+                  📊 Total YTD: <span style={{ color: theme.primary }}>{formatPrice(analytics?.yearlyTotal || 0)}</span>
+                </div>
+              </div>
+
+              {/* Top Products */}
+              <div style={{ backgroundColor: theme.cardBg, borderRadius: "16px", padding: "24px", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: `1px solid ${theme.border}` }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: "18px", fontWeight: "700", color: theme.text }}>🏆 Produk Terpopuler</h3>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  {analytics?.topProducts && analytics.topProducts.length > 0 ? (
+                    analytics.topProducts.slice(0, 5).map((item, idx) => {
+                      const colors = [theme.danger, "#f97316", theme.warning, theme.success, theme.primary];
+                      return (
+                        <div 
+                          key={idx} 
+                          style={{ 
+                            display: "flex", 
+                            justifyContent: "space-between", 
+                            alignItems: "center", 
+                            padding: "16px", 
+                            backgroundColor: theme.bg, 
+                            borderRadius: "12px", 
+                            borderLeft: `5px solid ${colors[idx]}`,
+                            transition: "all 0.2s",
+                            cursor: "pointer"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateX(8px)";
+                            e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateX(0)";
+                            e.currentTarget.style.boxShadow = "none";
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: "700", fontSize: "15px", color: theme.text, marginBottom: "4px" }}>
+                              <span style={{ fontSize: "18px", marginRight: "8px" }}>{["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][idx]}</span>
+                              {item.name}
+                            </div>
+                            <div style={{ fontSize: "13px", color: theme.textSecondary, fontWeight: "600" }}>Terjual: {item.totalSold} unit</div>
+                          </div>
+                          <div style={{ fontSize: "16px", fontWeight: "700", color: theme.success, textAlign: "right" }}>{formatPrice(item.revenue)}</div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ textAlign: "center", padding: "40px", color: theme.textSecondary }}>
+                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>📦</div>
+                      <div style={{ fontSize: "16px", fontWeight: "600" }}>Belum ada data penjualan</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Key Metrics */}
+              <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", gap: "20px", marginTop: "20px" }}>
+                {[
+                  { label: "Avg Order Value", value: formatPrice(summary?.avgOrderValue || 0), icon: "💰", trend: "+12%", positive: true, color: theme.success },
+                  { label: "Conversion Rate", value: analytics?.conversionRate ? `${analytics.conversionRate}%` : "0%", icon: "📊", trend: "+5%", positive: true, color: theme.primary },
+                  { label: "Customer Baru", value: analytics?.newCustomers || 0, icon: "👥", trend: "+8%", positive: true, color: theme.warning },
+                  { label: "Total Produk", value: products.length, icon: "📦", trend: `${products.filter(p => (p.stock || 0) < 10).length} low stock`, positive: false, color: theme.danger }
+                ].map((metric, idx) => (
+                  <div 
+                    key={idx} 
+                    style={{ 
+                      backgroundColor: theme.cardBg, 
+                      borderRadius: "16px", 
+                      padding: "24px", 
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.1)", 
+                      borderTop: `4px solid ${metric.color}`,
+                      border: `1px solid ${theme.border}`,
+                      transition: "all 0.3s",
+                      cursor: "pointer"
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "translateY(-4px)";
+                      e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.15)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.1)";
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                      <div style={{ fontSize: "13px", color: theme.textSecondary, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: "600" }}>{metric.label}</div>
+                      <div style={{ fontSize: "28px" }}>{metric.icon}</div>
+                    </div>
+                    <div style={{ fontSize: "32px", fontWeight: "700", color: theme.text, marginBottom: "8px" }}>{metric.value}</div>
+                    <div style={{ fontSize: "13px", color: metric.positive ? theme.success : theme.danger, fontWeight: "600" }}>
+                      {metric.positive ? "📈" : "⚠️"} {metric.trend}
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Key Metrics */}
-            <div style={{
-              gridColumn: "1 / -1",
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-              gap: "16px"
-            }}>
-              {[
-                { label: "Avg Order Value", value: formatPrice(summary?.totalPaid > 0 ? (summary?.totalOmzet / summary?.totalPaid) : 0), trend: "+12%", positive: true },
-                { label: "Conversion Rate", value: "68%", trend: "+5%", positive: true },
-                { label: "Customer Baru", value: "23", trend: "+8%", positive: true },
-                { label: "Return Rate", value: "2%", trend: "-1%", positive: true }
-              ].map((metric, idx) => (
-                <div key={idx} style={{
-                  backgroundColor: "white",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                  borderTop: `3px solid ${metric.positive ? "#10b981" : "#ef4444"}`
-                }}>
-                  <div style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
-                    {metric.label}
-                  </div>
-                  <div style={{ fontSize: "24px", fontWeight: "700", color: "#1f2937", marginBottom: "8px" }}>
-                    {metric.value}
-                  </div>
-                  <div style={{
-                    fontSize: "12px",
-                    color: metric.positive ? "#10b981" : "#ef4444",
-                    fontWeight: "600"
-                  }}>
-                    {metric.positive ? "📈" : "📉"} {metric.trend}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </div>
+
+      {/* Add Product Modal */}
+      {showAddProduct && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0, 0, 0, 0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }}>
+          <div style={{ backgroundColor: theme.cardBg, borderRadius: "20px", padding: "32px", width: "500px", maxWidth: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)", border: `1px solid ${theme.border}`, animation: "modalSlideIn 0.3s ease" }}>
+            <h2 style={{ margin: "0 0 24px 0", fontSize: "24px", fontWeight: "700", color: theme.text }}>➕ Tambah Produk Baru</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "600", color: theme.text }}>Nama Produk</label>
+                <input type="text" placeholder="Masukkan nama produk" value={newProduct.name} onChange={(e) => setNewProduct({...newProduct, name: e.target.value})} style={{ width: "100%", padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: "10px", fontSize: "14px", backgroundColor: theme.bg, color: theme.text }} />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "600", color: theme.text }}>Harga (IDR)</label>
+                <input type="number" placeholder="100000" value={newProduct.price} onChange={(e) => setNewProduct({...newProduct, price: e.target.value})} style={{ width: "100%", padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: "10px", fontSize: "14px", backgroundColor: theme.bg, color: theme.text }} />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "600", color: theme.text }}>Stock</label>
+                <input type="number" placeholder="10" value={newProduct.stock} onChange={(e) => setNewProduct({...newProduct, stock: e.target.value})} style={{ width: "100%", padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: "10px", fontSize: "14px", backgroundColor: theme.bg, color: theme.text }} />
+              </div>
+              <div>
+                <label style={{ display: "block", marginBottom: "8px", fontSize: "14px", fontWeight: "600", color: theme.text }}>Kategori</label>
+                <select value={newProduct.category} onChange={(e) => setNewProduct({...newProduct, category: e.target.value})} style={{ width: "100%", padding: "12px 16px", border: `1px solid ${theme.border}`, borderRadius: "10px", fontSize: "14px", backgroundColor: theme.bg, color: theme.text, cursor: "pointer" }}>
+                  <option value="">Pilih kategori</option>
+                  <option value="Electronics">Electronics</option>
+                  <option value="Fashion">Fashion</option>
+                  <option value="Food">Food</option>
+                  <option value="Books">Books</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
+                <button onClick={handleAddProduct} style={{ flex: 1, padding: "14px", backgroundColor: theme.primary, color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "15px" }}>✅ Simpan</button>
+                <button onClick={() => { setShowAddProduct(false); setNewProduct({ name: "", price: "", stock: "", category: "" }); }} style={{ flex: 1, padding: "14px", backgroundColor: theme.danger, color: "white", border: "none", borderRadius: "10px", cursor: "pointer", fontWeight: "600", fontSize: "15px" }}>❌ Batal</button>
+              </div>
+            </div>
+          </div>
+          <style>{`@keyframes modalSlideIn { from { transform: translateY(-50px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
+        </div>
+      )}
     </div>
   );
 }
